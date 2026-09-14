@@ -41,6 +41,7 @@ services:
       - ./config/go.d/postgres.conf:/etc/netdata/go.d/postgres.conf:ro
       - ./config/go.d/httpcheck.conf:/etc/netdata/go.d/httpcheck.conf:ro
       - ./config/go.d/portcheck.conf:/etc/netdata/go.d/portcheck.conf:ro
+      - ./config/go.d/sd/docker.conf:/etc/netdata/go.d/sd/docker.conf:ro
       - ./config/health_alarm_notify.conf:/etc/netdata/health_alarm_notify.conf:ro
       - ./config/sendmail.sh:/usr/local/bin/netdata-sendmail:ro
       # metrics history and state

@@ -3,11 +3,13 @@ services:
     image: percona/percona-distribution-postgresql:17
     restart: always
     environment:
-      POSTGRES_USER: ${MASTER_POSTGRES_USER}
-      POSTGRES_PASSWORD: ${MASTER_POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       # no POSTGRES_DB: only the built-in "postgres" database is created
-      REPLICATION_USER: ${MASTER_REPLICATION_USER}
-      REPLICATION_PASSWORD: ${MASTER_REPLICATION_PASSWORD}
+      REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
+      REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      MONITOR_USER: ${POSTGRES_MONITOR_USER}
+      MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD}
     # wal_level/max_wal_senders: streaming replication
     # summarize_wal: incremental backups (pg_basebackup --incremental)
     # pg_stat_monitor: query analytics in PMM

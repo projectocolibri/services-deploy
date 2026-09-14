@@ -3,17 +3,19 @@ services:
     image: percona/percona-server:8.0
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: ${MASTER_MYSQL_ROOT_PASSWORD}
-      MYSQL_USER: ${MASTER_MYSQL_USER}
-      MYSQL_PASSWORD: ${MASTER_MYSQL_USER_PASSWORD}
-      REPLICATION_USER: ${MASTER_REPLICATION_USER}
-      REPLICATION_PASSWORD: ${MASTER_REPLICATION_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_USER_PASSWORD}
+      REPLICATION_USER: ${MYSQL_REPLICATION_USER}
+      REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
+      MONITOR_USER: ${MYSQL_MONITOR_USER}
+      MONITOR_PASSWORD: ${MYSQL_MONITOR_PASSWORD}
     # server-id/log-bin/gtid: GTID replication
     # mysql_clone: lets the replica clone this instance on its first start
     command:
       - --server-id=${MASTER_SERVER_ID}
-      - --log-bin=${MASTER_LOG_BIN}
-      - --binlog-format=${MASTER_BINLOG_FORMAT}
+      - --log-bin=${MYSQL_LOG_BIN}
+      - --binlog-format=${MYSQL_BINLOG_FORMAT}
       - --gtid-mode=ON
       - --enforce-gtid-consistency=ON
       - --plugin-load-add=mysql_clone.so

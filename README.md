@@ -77,8 +77,8 @@ Put production values in `.env` on each server. The most important ones:
 | Stack | Variables |
 |---|---|
 | `gateway` | `VPN_HOST` (public IP / domain), `VPN_PEERS` |
-| `databases/mysql` | `MASTER_MYSQL_ROOT_PASSWORD`, `MASTER_MYSQL_USER_PASSWORD`, `MASTER_REPLICATION_PASSWORD` |
-| `databases/postgres` | `MASTER_POSTGRES_PASSWORD`, `MASTER_REPLICATION_PASSWORD`, `ADMIN_PASSWORD` |
+| `databases/mysql` | `MYSQL_ROOT_PASSWORD`, `MYSQL_USER_PASSWORD`, `MYSQL_REPLICATION_PASSWORD`, `MYSQL_MONITOR_PASSWORD` |
+| `databases/postgres` | `POSTGRES_PASSWORD`, `POSTGRES_REPLICATION_PASSWORD`, `POSTGRES_MONITOR_PASSWORD`, `ADMIN_PASSWORD` |
 | `monitoring` | `MONITOR_*_PASSWORD`, SMTP and Slack settings |
 
 For local tests only, `compose.override.yaml` (not committed) can publish

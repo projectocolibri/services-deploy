@@ -8,3 +8,10 @@
     CREATE USER '${REPLICATION_USER}'@'%' IDENTIFIED BY '${REPLICATION_PASSWORD}';
     GRANT REPLICATION SLAVE, BACKUP_ADMIN ON *.* TO '${REPLICATION_USER}'@'%';
 EOSQL
+
+# monitoring user (Netdata): read-only access to server status and replication
+# state. Replicated to the replica with the rest of the users.
+"${mysql[@]}" <<-EOSQL
+    CREATE USER '${MONITOR_USER}'@'%' IDENTIFIED BY '${MONITOR_PASSWORD}' WITH MAX_USER_CONNECTIONS 5;
+    GRANT USAGE, PROCESS, REPLICATION CLIENT ON *.* TO '${MONITOR_USER}'@'%';
+EOSQL

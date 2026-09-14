@@ -5,12 +5,12 @@ services:
     # No depends_on on the master: sub-stacks can be commented out in
     # ../compose.yaml. The entrypoint script waits for the master instead.
     environment:
-      # after the clone this instance has the master's users: must match the
-      # master root password
-      MYSQL_ROOT_PASSWORD: ${REPLICA_MYSQL_ROOT_PASSWORD}
+      # same root password as the master: needed to start before the clone,
+      # and after the clone this instance has the master's users
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MASTER_HOST: ${REPLICA_MASTER_HOST}
-      REPLICATION_USER: ${MASTER_REPLICATION_USER}
-      REPLICATION_PASSWORD: ${MASTER_REPLICATION_PASSWORD}
+      REPLICATION_USER: ${MYSQL_REPLICATION_USER}
+      REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
     entrypoint: ["/bin/bash", "/usr/local/bin/replica-entrypoint.sh"]
     # relay-log: fixed name, the container hostname changes on every recreate
     command:

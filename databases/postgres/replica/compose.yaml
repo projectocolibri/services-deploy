@@ -4,11 +4,12 @@ services:
     restart: always
     # No depends_on on the master: sub-stacks can be commented out in
     # ../compose.yaml. The entrypoint script waits for the master instead.
+    # No POSTGRES_USER / POSTGRES_PASSWORD: the replica is cloned from the
+    # master (same users) and never runs initdb.
     environment:
-      POSTGRES_PASSWORD: ${REPLICA_POSTGRES_PASSWORD}
       MASTER_HOST: ${REPLICA_MASTER_HOST}
-      REPLICATION_USER: ${MASTER_REPLICATION_USER}
-      REPLICATION_PASSWORD: ${MASTER_REPLICATION_PASSWORD}
+      REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
+      REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
     entrypoint: ["/bin/bash", "/usr/local/bin/replica-entrypoint.sh"]
     command:
       - postgres
