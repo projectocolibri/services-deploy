@@ -1,0 +1,29 @@
+# ============================================================================
+# Gateway stack aggregator.
+#
+# Included from the root ./compose.yaml. The only entry points into the
+# deployment:
+#   - VPN   private access to every internal service (admin tools, databases)
+#   - HTTP  public web apps (SSL ends here)
+#
+# Every sub-stack gets the same two env files, layered in order:
+#   - ./.env.dev  development defaults
+#   - ./.env      local overrides / secrets
+# Comment out any entry to leave that gateway out.
+# ============================================================================
+include:
+  # ======= VPN Gateway =======
+  # WireGuard. Clients reach the internal Docker network and resolve service
+  # names (postgres-db, mysql-admin, pmm-server, ...).
+  - path: ./vpn/compose.yaml
+    env_file:
+      - ./.env.dev
+      - ./.env
+
+  # ======= HTTP Gateway =======
+  # nginx reverse proxy for public apps, one config file per app in
+  # ./http/conf.d.
+  - path: ./http/compose.yaml
+    env_file:
+      - ./.env.dev
+      - ./.env

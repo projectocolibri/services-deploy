@@ -9,5 +9,5 @@ services:
       PMA_HOSTS: ${ADMIN_HOSTS}
       PMA_VERBOSES: ${ADMIN_HOSTS_LABELS}
       UPLOAD_LIMIT: ${ADMIN_UPLOAD_LIMIT:-64M}
-    ports:
-      - "${ADMIN_PORT:-8080}:80"
+    # No published ports: reachable only through the VPN gateway
+    # (http://mysql-admin)

@@ -14,6 +14,11 @@ name: colibri-services
 # Each entry points at a nested compose file. Comment an entry out to leave
 # that whole stack out of the deployment.
 include:
+  # GATEWAY
+  # The only entry points: VPN (internal access) and HTTP (public apps). See
+  # ./gateway/compose.yaml.
+  - path: ./gateway/compose.yaml
+
   # MONITORING (PMM SERVER)
   # Shared Percona Monitoring and Management server. The database stacks
   # below register themselves in it through their own PMM clients.
@@ -31,3 +36,11 @@ include:
   # Fans out to master / replica / backup / admin / monitor (see
   # ./databases/postgres/compose.yaml for which of those are enabled).
   - path: ./databases/postgres/compose.yaml
+
+# Internal network shared by every service. Fixed subnet so VPN clients can
+# route to it (keep in sync with VPN_ALLOWED_IPS in gateway/.env.dev).
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

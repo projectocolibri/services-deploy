@@ -1,0 +1,26 @@
+services:
+  vpn:
+    image: lscr.io/linuxserver/wireguard:1.0.20260223-r0-ls122
+    restart: always
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      # address clients connect to (public IP or domain of this server)
+      SERVERURL: ${VPN_HOST}
+      SERVERPORT: ${VPN_PORT:-51820}
+      # one client config per name (comma separated)
+      PEERS: ${VPN_PEERS}
+      INTERNAL_SUBNET: ${VPN_SUBNET:-10.13.13.0}
+      # routed through the VPN: VPN subnet + internal Docker network
+      ALLOWEDIPS: ${VPN_ALLOWED_IPS}
+      # built-in DNS forwarding to Docker DNS: clients resolve service names
+      PEERDNS: auto
+      LOG_CONFS: "false"
+    ports:
+      - "${VPN_PORT:-51820}:51820/udp"
+    volumes:
+      # server keys and client configs (peer_<name>/peer_<name>.conf + QR code)
+      - ./config:/config

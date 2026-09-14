@@ -8,8 +8,8 @@ services:
     restart: always
     environment:
       PMM_ENABLE_UPDATES: "false"
-    ports:
-      - "${PMM_PORT:-8443}:8443"
+    # No published ports: reachable only through the VPN gateway
+    # (http://pmm-server:8080 or https://pmm-server:8443)
     volumes:
       - pmm-data:/srv
     healthcheck:

@@ -14,6 +14,17 @@
 databases/*/backup/backups/
 
 # ============================================================================
+# Gateway secrets
+# ============================================================================
+# WireGuard: keys and generated configs stay local, templates can be shared
+gateway/vpn/config/*
+!gateway/vpn/config/templates/
+!gateway/vpn/config/coredns/
+# HTTP certificates
+gateway/http/certs/*
+!gateway/http/certs/.gitkeep
+
+# ============================================================================
 # Compose overrides kept per machine
 # ============================================================================
 compose.override.yaml

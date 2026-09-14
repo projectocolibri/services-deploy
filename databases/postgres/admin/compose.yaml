@@ -14,8 +14,8 @@ services:
       PGADMIN_SERVER_JSON_FILE: /tmp/servers.json
       PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
     entrypoint: ["/bin/sh", "/usr/local/bin/pgadmin-entrypoint.sh"]
-    ports:
-      - "${ADMIN_PORT:-5050}:80"
+    # No published ports: reachable only through the VPN gateway
+    # (http://postgres-admin)
     volumes:
       - pgadmin-data:/var/lib/pgadmin
       - ./pgadmin-entrypoint.sh:/usr/local/bin/pgadmin-entrypoint.sh:ro
