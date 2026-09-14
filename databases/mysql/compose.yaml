@@ -38,11 +38,3 @@ include:
     env_file:
       - ./.env.dev
       - ./.env
-
-  # ======= Monitor =======
-  # PMM client: registers the instances above in the shared PMM server
-  # (monitoring/pmm).
-  - path: ./monitor/compose.yaml
-    env_file:
-      - ./.env.dev
-      - ./.env

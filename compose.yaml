@@ -19,21 +19,18 @@ include:
   # ./gateway/compose.yaml.
   - path: ./gateway/compose.yaml
 
-  # MONITORING (PMM SERVER)
-  # Shared Percona Monitoring and Management server. The database stacks
-  # below register themselves in it through their own PMM clients.
-  - path: ./monitoring/pmm/compose.yaml
-    env_file:
-      - ./monitoring/pmm/.env.dev
-      - ./monitoring/pmm/.env
+  # MONITORING
+  # Netdata (metrics, databases, uptime, alerts) and Dozzle (logs). See
+  # ./monitoring/compose.yaml.
+  - path: ./monitoring/compose.yaml
 
   # MYSQL DATABASE
-  # Fans out to master / replica / backup / admin / monitor (see
+  # Fans out to master / replica / backup / admin (see
   # ./databases/mysql/compose.yaml for which of those are enabled).
   - path: ./databases/mysql/compose.yaml
 
   # POSTGRES DATABASE
-  # Fans out to master / replica / backup / admin / monitor (see
+  # Fans out to master / replica / backup / admin (see
   # ./databases/postgres/compose.yaml for which of those are enabled).
   - path: ./databases/postgres/compose.yaml
 
