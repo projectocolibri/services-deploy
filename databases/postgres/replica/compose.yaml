@@ -1,0 +1,32 @@
+services:
+  postgres-replica:
+    image: percona/percona-distribution-postgresql:17
+    restart: always
+    # No depends_on on the master: sub-stacks can be commented out in
+    # ../compose.yaml. The entrypoint script waits for the master instead.
+    environment:
+      POSTGRES_PASSWORD: ${REPLICA_POSTGRES_PASSWORD}
+      MASTER_HOST: ${REPLICA_MASTER_HOST}
+      REPLICATION_USER: ${MASTER_REPLICATION_USER}
+      REPLICATION_PASSWORD: ${MASTER_REPLICATION_PASSWORD}
+    entrypoint: ["/bin/bash", "/usr/local/bin/replica-entrypoint.sh"]
+    command:
+      - postgres
+      - -c
+      - hot_standby=on
+      - -c
+      - summarize_wal=on
+      - -c
+      - shared_preload_libraries=pg_stat_monitor
+    volumes:
+      - postgres-replica-data:/data/db
+      - ./replica-entrypoint.sh:/usr/local/bin/replica-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres-replica-data:

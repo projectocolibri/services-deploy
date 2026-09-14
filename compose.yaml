@@ -1,0 +1,33 @@
+# ============================================================================
+# Root Compose entrypoint for the Colibri services deployment.
+#
+# This file holds no services of its own: it only aggregates the per-domain
+# stacks below via `include`. Each included file may in turn include its own
+# sub-stacks, so `docker compose up` from this directory brings up everything
+# that is currently uncommented.
+#
+# Project name applied to every included stack (container / network / volume
+# prefix). Keep it stable: renaming it orphans existing volumes.
+# ============================================================================
+name: colibri-services
+
+# Each entry points at a nested compose file. Comment an entry out to leave
+# that whole stack out of the deployment.
+include:
+  # MONITORING (PMM SERVER)
+  # Shared Percona Monitoring and Management server. The database stacks
+  # below register themselves in it through their own PMM clients.
+  - path: ./monitoring/pmm/compose.yaml
+    env_file:
+      - ./monitoring/pmm/.env.dev
+      - ./monitoring/pmm/.env
+
+  # MYSQL DATABASE
+  # Fans out to master / replica / backup / admin / monitor (see
+  # ./databases/mysql/compose.yaml for which of those are enabled).
+  - path: ./databases/mysql/compose.yaml
+
+  # POSTGRES DATABASE
+  # Fans out to master / replica / backup / admin / monitor (see
+  # ./databases/postgres/compose.yaml for which of those are enabled).
+  - path: ./databases/postgres/compose.yaml

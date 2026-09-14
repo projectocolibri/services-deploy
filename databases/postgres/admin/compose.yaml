@@ -1,0 +1,24 @@
+services:
+  postgres-admin:
+    image: dpage/pgadmin4:9
+    restart: always
+    # No depends_on on the databases: sub-stacks can be commented out in
+    # ../compose.yaml, and depending on an undefined service is an error.
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${ADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD}
+      # Servers listed in pgAdmin (comma separated), rebuilt on every start
+      ADMIN_HOSTS: ${ADMIN_HOSTS}
+      ADMIN_HOSTS_LABELS: ${ADMIN_HOSTS_LABELS}
+      ADMIN_HOSTS_USER: ${ADMIN_HOSTS_USER}
+      PGADMIN_SERVER_JSON_FILE: /tmp/servers.json
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+    entrypoint: ["/bin/sh", "/usr/local/bin/pgadmin-entrypoint.sh"]
+    ports:
+      - "${ADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./pgadmin-entrypoint.sh:/usr/local/bin/pgadmin-entrypoint.sh:ro
+
+volumes:
+  pgadmin-data:

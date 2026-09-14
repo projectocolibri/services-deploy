@@ -1,0 +1,18 @@
+services:
+  postgres-backup:
+    image: percona/percona-distribution-postgresql:17
+    restart: always
+    user: root
+    # No depends_on on the databases: sub-stacks can be commented out in
+    # ../compose.yaml, and depending on an undefined service is an error.
+    # The scheduler script waits for BACKUP_HOST instead.
+    environment:
+      BACKUP_HOST: ${BACKUP_HOST}
+      BACKUP_HOST_USER: ${BACKUP_HOST_USER}
+      BACKUP_HOST_PASSWORD: ${BACKUP_HOST_PASSWORD}
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-4h}
+    # pg_basebackup works over the network: no data volume mount needed
+    volumes:
+      - ${POSTGRES_BACKUP_FOLDER}:/backups
+      - ./postgres-backup-scheduler.sh:/usr/local/bin/postgres-backup-scheduler.sh:ro
+    entrypoint: ["/bin/bash", "/usr/local/bin/postgres-backup-scheduler.sh"]

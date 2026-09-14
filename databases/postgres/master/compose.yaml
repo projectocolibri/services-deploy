@@ -1,0 +1,35 @@
+services:
+  postgres-db:
+    image: percona/percona-distribution-postgresql:17
+    restart: always
+    environment:
+      POSTGRES_USER: ${MASTER_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${MASTER_POSTGRES_PASSWORD}
+      # no POSTGRES_DB: only the built-in "postgres" database is created
+      REPLICATION_USER: ${MASTER_REPLICATION_USER}
+      REPLICATION_PASSWORD: ${MASTER_REPLICATION_PASSWORD}
+    # wal_level/max_wal_senders: streaming replication
+    # summarize_wal: incremental backups (pg_basebackup --incremental)
+    # pg_stat_monitor: query analytics in PMM
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - summarize_wal=on
+      - -c
+      - shared_preload_libraries=pg_stat_monitor
+    volumes:
+      - postgres-data:/data/db
+      - ./init-master.sh:/docker-entrypoint-initdb.d/init-master.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres-data:

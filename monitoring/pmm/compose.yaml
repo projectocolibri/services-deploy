@@ -1,0 +1,23 @@
+services:
+  # ======= PMM Server =======
+  # Dashboards (Grafana), metrics storage and Query Analytics for every
+  # database stack. Each database stack ships its own PMM client that
+  # registers its instances here.
+  pmm-server:
+    image: percona/pmm-server:3
+    restart: always
+    environment:
+      PMM_ENABLE_UPDATES: "false"
+    ports:
+      - "${PMM_PORT:-8443}:8443"
+    volumes:
+      - pmm-data:/srv
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sfk https://127.0.0.1:8443/v1/server/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+volumes:
+  pmm-data:

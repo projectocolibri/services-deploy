@@ -1,0 +1,31 @@
+# ============================================================================
+# Local overrides / secrets
+# ----------------------------------------------------------------------------
+# Every stack loads .env.dev (committed defaults) and then .env (local, never
+# committed). Compose requires .env to exist, so after cloning run once per
+# stack:  cp .env.example .env
+# ============================================================================
+.env
+!.env.example
+
+# ============================================================================
+# Backups (PERCONA_MYSQL_BACKUP_FOLDER / POSTGRES_BACKUP_FOLDER)
+# ============================================================================
+databases/*/backup/backups/
+
+# ============================================================================
+# Compose overrides kept per machine
+# ============================================================================
+compose.override.yaml
+compose.override.yml
+
+# ============================================================================
+# OS / editor
+# ============================================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*~

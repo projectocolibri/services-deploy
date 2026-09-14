@@ -1,0 +1,3 @@
+# Everything here is mounted into Linux containers: always check out with LF,
+# even on Windows (CRLF breaks shell scripts and env files inside containers).
+* text=auto eol=lf

@@ -1,0 +1,29 @@
+services:
+  # ======= PMM Client =======
+  # Agent that registers the MySQL instances in PMM Server and ships their
+  # metrics. PMM Server itself runs in the shared monitoring stack
+  # (monitoring/pmm): one server monitors every database.
+  mysql-pmm-client:
+    image: percona/pmm-client:3
+    restart: always
+    # No depends_on: pmm-server and the databases live in other stacks, and
+    # depending on an undefined service is an error. If the PMM server is not
+    # up yet the agent setup fails and restart: always retries it.
+    environment:
+      PMM_AGENT_SERVER_ADDRESS: ${MONITOR_SERVER_ADDRESS}
+      PMM_AGENT_SERVER_USERNAME: admin
+      PMM_AGENT_SERVER_PASSWORD: ${MONITOR_ADMIN_PASSWORD}
+      PMM_AGENT_SERVER_INSECURE_TLS: 1
+      PMM_AGENT_CONFIG_FILE: config/pmm-agent.yaml
+      PMM_AGENT_SETUP: 1
+      PMM_AGENT_SETUP_FORCE: 1
+      # must be unique per PMM client
+      PMM_AGENT_SETUP_NODE_NAME: mysql-pmm-client
+      # Registers the MySQL instances once the agent is connected
+      PMM_AGENT_PRERUN_SCRIPT: /usr/local/bin/pmm-register-mysql.sh
+      MONITOR_MYSQL_HOSTS: ${MONITOR_MYSQL_HOSTS}
+      MONITOR_MYSQL_NAMES: ${MONITOR_MYSQL_NAMES}
+      MONITOR_MYSQL_USERS: ${MONITOR_MYSQL_USERS}
+      MONITOR_MYSQL_PASSWORDS: ${MONITOR_MYSQL_PASSWORDS}
+    volumes:
+      - ./pmm-register-mysql.sh:/usr/local/bin/pmm-register-mysql.sh:ro
