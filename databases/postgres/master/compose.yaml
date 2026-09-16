@@ -10,7 +10,7 @@
 #                  this file
 # Variables:     POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_REPLICATION_USER,
 #                POSTGRES_REPLICATION_PASSWORD, POSTGRES_MONITOR_USER,
-#                POSTGRES_MONITOR_PASSWORD.
+#                POSTGRES_MONITOR_PASSWORD, POSTGRES_MAX_SLOT_WAL_KEEP_SIZE.
 #                TZ from the root .env.dev.
 # ============================================================================
 
@@ -58,6 +58,9 @@ services:
     #   wal_keep_size=1GB          WAL kept for a replica that was briefly
     #                              disconnected
     #   shared_preload_libraries   load pg_stat_monitor for PMM Query Analytics
+    #   max_slot_wal_keep_size     most WAL a replication slot (the backup WAL
+    #                              stream) may hold back, so an unreachable
+    #                              backup server cannot fill this disk
     command:
       - postgres
       - -c
@@ -68,6 +71,8 @@ services:
       - wal_keep_size=1GB
       - -c
       - shared_preload_libraries=pg_stat_monitor
+      - -c
+      - max_slot_wal_keep_size=${POSTGRES_MAX_SLOT_WAL_KEEP_SIZE:-10GB}
 
     # --------------------------------------------------------------------------
     # Network

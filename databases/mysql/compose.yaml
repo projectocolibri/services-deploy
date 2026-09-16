@@ -5,6 +5,8 @@
 # Role:          - master:  read/write primary, alias mysql-primary
 #                - replica: read-only copy, alias mysql-replica
 #                - admin:   phpMyAdmin web panel, reached through the VPN
+#                - backup:  daily backups of the replica and binary log
+#                           streaming, on the server running the replica
 #                The primary and replica are separate services with separate
 #                volumes; the replica clones the primary on its first start.
 # Prerequisites: - databases/mysql/.env must exist (may be empty)
@@ -39,6 +41,17 @@ include:
   # Admin panel (phpMyAdmin)
   # --------------------------------------------------------------------------
   - path: ./admin/compose.yaml
+    env_file:
+      # Committed development defaults.
+      - ./.env.dev
+      # Local, uncommitted overrides and secrets.
+      - ./.env
+
+  # --------------------------------------------------------------------------
+  # Backups (XtraBackup + binary log streaming)
+  # --------------------------------------------------------------------------
+  # Include it on the server running the replica.
+  - path: ./backup/compose.yaml
     env_file:
       # Committed development defaults.
       - ./.env.dev

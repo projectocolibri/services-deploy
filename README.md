@@ -73,10 +73,12 @@ databases/
     master/                  primary, read/write (mysql-db)
     replica/                 read-only replica (mysql-replica-db)
     admin/                   phpMyAdmin
+    backup/                  XtraBackup, binary log stream, restore script
   postgres/
     master/                  primary, read/write (postgres-db)
     replica/                 read-only replica (postgres-replica-db)
     admin/                   pgAdmin
+    backup/                  pg_basebackup, WAL stream, restore script
 ```
 
 Every folder with a `compose.yaml` is a stack. Stacks list their sub-stacks
@@ -167,8 +169,8 @@ On the **replica server** (clone of this repository):
    route overlaps a local one.
 3. In `gateway/compose.yaml`, comment out `vpn/host` and uncomment
    `vpn/client`. Remove the monitoring stack from `compose.yaml`, and include
-   only `replica/` in `databases/mysql/compose.yaml` and
-   `databases/postgres/compose.yaml`.
+   only `replica/` and `backup/` in `databases/mysql/compose.yaml` and
+   `databases/postgres/compose.yaml` (on the VPN host, remove `backup/`).
 4. Use the same database passwords and `VPN_DNS_IP` as the VPN host.
 5. `docker compose up -d`, then check `docker compose ps vpn-client` is
    healthy and the replication state (see [Databases](#databases)).
@@ -209,7 +211,7 @@ Apps connect by role alias (`*-primary`, `*-replica`), never by service name.
 - **PostgreSQL**: the replica clones the primary on its first start
   (`pg_basebackup`), then streams its WAL as a hot standby.
 - Replication is asynchronous. The replica is for read queries and reporting:
-  it runs on the same machine and is not a backup.
+  it is not a backup (see [Backups](#backups)).
 
 Replication state:
 
@@ -223,6 +225,68 @@ docker compose exec postgres-db psql -U postgres -c "SELECT client_addr, state, 
 
 phpMyAdmin (`http://mysql-admin`) and pgAdmin (`http://postgres-admin`) list
 the servers in `ADMIN_HOSTS` / `ADMIN_HOSTS_LABELS`.
+
+### Backups
+
+The `backup/` stacks run on the server with the replicas and write to a local
+directory there. Full backups are taken from the replicas (no load on the
+primaries); the primaries' logs are streamed continuously for point-in-time
+recovery.
+
+| | MySQL (`databases/mysql/backup`) | PostgreSQL (`databases/postgres/backup`) |
+|---|---|---|
+| Daily backup | `mysql-backup`: Percona XtraBackup of the replica, zstd | `postgres-backup`: `pg_basebackup` of the standby, lz4 |
+| Verification | Decompress and prepare a copy after every backup | `pg_verifybackup` against the manifest |
+| Point in time | `mysql-binlog`: binary logs streamed from the primary | `postgres-wal`: WAL streamed from the primary (replication slot) |
+| Directory | `MYSQL_BACKUP_DIR`: `full/`, `binlog/` | `POSTGRES_BACKUP_DIR`: `base/`, `wal/` |
+| Schedule | `MYSQL_BACKUP_TIME` (UTC), default 02:00 | `POSTGRES_BACKUP_TIME` (`TZ`), default 02:30 |
+
+- A backup is written to `<timestamp>.partial` and renamed only when complete
+  and verified; failures leave `<timestamp>.failed.log`. Without any backup
+  (first start, or the first one failed) a backup runs at once and is retried
+  hourly.
+- Retention (`*_BACKUP_RETENTION_DAYS`, default 7) removes older backups but
+  never the newest, and keeps logs back to the oldest remaining backup.
+- Health checks: the backup services turn unhealthy when the newest backup is
+  over 26 hours old, the streamers when they stop.
+- Backup files are readable only by root. Use a separate disk in production
+  (`MYSQL_BACKUP_DIR=/srv/backups/mysql`, ...).
+- The primary keeps WAL for the PostgreSQL stream while it is down, up to
+  `POSTGRES_MAX_SLOT_WAL_KEEP_SIZE` (default 10GB). If backups are removed for
+  good, drop the slot:
+  `docker compose exec postgres-db psql -U postgres -c "SELECT pg_drop_replication_slot('backup_wal')"`.
+
+Backups on the replica server survive the loss of the primary server, but not
+of both servers. For that, also copy the backup directories off-site (e.g.
+encrypted object storage).
+
+#### Restore
+
+Both scripts restore the newest backup into a **temporary server** (separate
+container and volume; production is never touched), optionally to a point in
+time in **UTC**. Run them on the server with the backups:
+
+```sh
+# Everything up to the last received change
+bash databases/mysql/backup/mysql-restore.sh
+bash databases/postgres/backup/postgres-restore.sh
+
+# Up to a moment, e.g. just before a bad DROP TABLE
+bash databases/mysql/backup/mysql-restore.sh "2026-09-16 11:30:17"
+bash databases/postgres/backup/postgres-restore.sh "2026-09-16 11:30:17"
+```
+
+Then take what you need from the temporary server and remove it:
+
+```sh
+docker exec mysql-restore mysqldump -uroot -p <database> [table] > dump.sql
+docker exec postgres-restore pg_dump -U postgres [-t table] <database> > dump.sql
+
+docker rm -f mysql-restore; docker volume rm mysql-restore
+docker rm -f postgres-restore; docker volume rm postgres-restore
+```
+
+Run a restore regularly (e.g. monthly) to prove the backups work.
 
 ## Monitoring
 
@@ -279,4 +343,6 @@ Same for `postgres-replica-db` / `<PROJECT_NAME>_postgres-replica-data`.
 - [ ] Docker log rotation configured
 - [ ] Replication checked
 - [ ] PMM alert rules and contact points configured and tested
-- [ ] Backups configured
+- [ ] `MYSQL_BACKUP_DIR` and `POSTGRES_BACKUP_DIR` on a separate disk, backup
+      services healthy, and a test restore done
+- [ ] Off-site copy of the backup directories

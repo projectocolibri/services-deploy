@@ -1,0 +1,140 @@
+# ============================================================================
+# PostgreSQL backups
+#
+# Purpose:       Daily base backups of the PostgreSQL standby plus continuous
+#                copies of the primary's WAL, for full and point-in-time
+#                recovery.
+# Role:          Runs on the server with the replica (which can be another
+#                server than the primary, connected through the VPN client).
+#                  - postgres-backup: pg_basebackup of the local standby,
+#                    verified and compressed, with retention
+#                  - postgres-wal: streams the primary's WAL through a
+#                    replication slot
+#                Backups are written to POSTGRES_BACKUP_DIR on this server.
+# Prerequisites: - The replica (../replica) running on this server
+#                - The primary reachable as postgres-primary (same server, or
+#                  through the VPN client and VPN_DNS_IP)
+#                - max_slot_wal_keep_size set on the primary (../master), so
+#                  the slot cannot fill the primary's disk while this server is
+#                  away
+#                - Enough disk in POSTGRES_BACKUP_DIR for about
+#                  POSTGRES_BACKUP_RETENTION_DAYS + 1 compressed backups plus
+#                  the WAL; ideally a separate disk
+# Variables:     POSTGRES_REPLICATION_USER, POSTGRES_REPLICATION_PASSWORD,
+#                REPLICA_PRIMARY_HOST, POSTGRES_BACKUP_DIR,
+#                POSTGRES_BACKUP_TIME, POSTGRES_BACKUP_RETENTION_DAYS,
+#                POSTGRES_BACKUP_VERIFY, POSTGRES_WAL_SLOT.
+#                TZ and VPN_DNS_IP from the root .env.dev.
+# ============================================================================
+
+services:
+  postgres-backup:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    # Same image as the servers, for matching client tools. Runs as root to
+    # write the backups regardless of the directory's owner.
+    image: percona/percona-distribution-postgresql:17
+    restart: always
+    user: root
+
+    # --------------------------------------------------------------------------
+    # Backup settings
+    # --------------------------------------------------------------------------
+    environment:
+      # TZ: time zone of BACKUP_TIME and log timestamps. Default: Etc/UTC.
+      TZ: ${TZ:-Etc/UTC}
+      # BACKUP_SOURCE_HOST: standby to back up (on this server).
+      BACKUP_SOURCE_HOST: postgres-replica
+      # REPLICATION_USER: replication role.
+      REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
+      # REPLICATION_PASSWORD: password of REPLICATION_USER.
+      REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      # BACKUP_TIME: daily start time, HH:MM. Default: 02:30.
+      BACKUP_TIME: ${POSTGRES_BACKUP_TIME:-02:30}
+      # BACKUP_RETENTION_DAYS: days to keep backups. Default: 7.
+      BACKUP_RETENTION_DAYS: ${POSTGRES_BACKUP_RETENTION_DAYS:-7}
+      # BACKUP_VERIFY: "true" checks every backup with pg_verifybackup.
+      BACKUP_VERIFY: ${POSTGRES_BACKUP_VERIFY:-true}
+
+    # --------------------------------------------------------------------------
+    # Startup
+    # --------------------------------------------------------------------------
+    entrypoint: ["/bin/bash", "/usr/local/bin/postgres-backup.sh"]
+
+    # --------------------------------------------------------------------------
+    # Backups and scripts
+    # --------------------------------------------------------------------------
+    volumes:
+      # POSTGRES_BACKUP_DIR: backup destination on this server. Relative paths
+      # are relative to this directory. Default: ./backups.
+      - ${POSTGRES_BACKUP_DIR:-./backups}:/backups
+      # Scheduler script.
+      - ./postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro
+
+    # --------------------------------------------------------------------------
+    # Health check
+    # --------------------------------------------------------------------------
+    # Healthy while a backup runs or the newest backup is under 26 hours old.
+    healthcheck:
+      test: ["CMD", "/bin/bash", "/usr/local/bin/postgres-backup.sh", "health"]
+      interval: 5m
+      timeout: 10s
+      retries: 1
+      start_period: 1h
+
+  postgres-wal:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    image: percona/percona-distribution-postgresql:17
+    restart: always
+    user: root
+
+    # --------------------------------------------------------------------------
+    # Stream settings
+    # --------------------------------------------------------------------------
+    environment:
+      # TZ: time zone of log timestamps. Default: Etc/UTC.
+      TZ: ${TZ:-Etc/UTC}
+      # PRIMARY_HOST: primary to stream from. Default: postgres-primary.
+      PRIMARY_HOST: ${REPLICA_PRIMARY_HOST:-postgres-primary}
+      # REPLICATION_USER: replication role on the primary.
+      REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
+      # REPLICATION_PASSWORD: password of REPLICATION_USER.
+      REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      # WAL_SLOT: replication slot on the primary. Default: backup_wal.
+      WAL_SLOT: ${POSTGRES_WAL_SLOT:-backup_wal}
+
+    # --------------------------------------------------------------------------
+    # Startup
+    # --------------------------------------------------------------------------
+    entrypoint: ["/bin/bash", "/usr/local/bin/postgres-wal.sh"]
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
+    # VPN_DNS_IP: resolves postgres-primary when the primary runs on another
+    # server.
+    dns:
+      - ${VPN_DNS_IP}
+
+    # --------------------------------------------------------------------------
+    # Backups and scripts
+    # --------------------------------------------------------------------------
+    volumes:
+      # POSTGRES_BACKUP_DIR: same destination as postgres-backup (wal/ subfolder).
+      - ${POSTGRES_BACKUP_DIR:-./backups}:/backups
+      # Stream script.
+      - ./postgres-wal.sh:/usr/local/bin/postgres-wal.sh:ro
+
+    # --------------------------------------------------------------------------
+    # Health check
+    # --------------------------------------------------------------------------
+    # Healthy while pg_receivewal is running.
+    healthcheck:
+      test: ["CMD", "/bin/bash", "/usr/local/bin/postgres-wal.sh", "health"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 2m

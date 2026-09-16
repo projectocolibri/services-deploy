@@ -5,6 +5,8 @@
 # Role:          - master:  read/write primary, alias postgres-primary
 #                - replica: read-only hot standby, alias postgres-replica
 #                - admin:   pgAdmin web panel, reached through the VPN
+#                - backup:  daily base backups of the standby and WAL
+#                           streaming, on the server running the replica
 #                The primary and replica are separate services with separate
 #                volumes; the replica clones the primary on its first start
 #                and then streams its WAL.
@@ -41,6 +43,17 @@ include:
   # Admin panel (pgAdmin)
   # --------------------------------------------------------------------------
   - path: ./admin/compose.yaml
+    env_file:
+      # Committed development defaults.
+      - ./.env.dev
+      # Local, uncommitted overrides and secrets.
+      - ./.env
+
+  # --------------------------------------------------------------------------
+  # Backups (pg_basebackup + WAL streaming)
+  # --------------------------------------------------------------------------
+  # Include it on the server running the replica.
+  - path: ./backup/compose.yaml
     env_file:
       # Committed development defaults.
       - ./.env.dev
