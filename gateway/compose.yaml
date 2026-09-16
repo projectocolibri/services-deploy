@@ -1,27 +1,43 @@
 # ============================================================================
 # Gateway stack
 #
-# Purpose:       Groups the only two entry points into the deployment.
-# Role:          - VPN  (./vpn):  private access to every internal service
-#                                 (databases, admin panels, monitoring)
-#                - HTTP (./http): public web apps behind nginx, TLS ends here
+# Purpose:       Groups the entry points into the deployment.
+# Role:          - VPN host   (./vpn/host):   WireGuard server, private access
+#                                              to every internal service. Runs
+#                                              on the server with the primaries.
+#                - VPN client (./vpn/client): joins another server's VPN host,
+#                                              for servers running only replicas
+#                - HTTP       (./http):        public web apps behind nginx,
+#                                              TLS ends here
+#                Include either the VPN host or the VPN client on a server,
+#                never both.
 # Prerequisites: - gateway/.env must exist (may be empty)
-#                - Firewall open for the VPN (UDP) and HTTP/HTTPS (TCP) ports
+#                - Firewall open for the VPN (UDP, host only) and HTTP/HTTPS
+#                  (TCP) ports
 # Variables:     Loaded from the env files below. See gateway/.env.dev for the
 #                meaning and defaults of each variable.
 # ============================================================================
 
 include:
   # --------------------------------------------------------------------------
-  # VPN gateway (WireGuard)
+  # VPN host (WireGuard server)
   # --------------------------------------------------------------------------
   # Env files are layered in order; a key in ./.env overrides ./.env.dev.
-  - path: ./vpn/compose.yaml
+  - path: ./vpn/host/compose.yaml
     env_file:
       # Committed development defaults.
       - ./.env.dev
       # Local, uncommitted overrides and secrets.
       - ./.env
+
+  # --------------------------------------------------------------------------
+  # VPN client (WireGuard peer of another server's VPN host)
+  # --------------------------------------------------------------------------
+  # On a replica-only server: comment out the VPN host above and uncomment this.
+  # - path: ./vpn/client/compose.yaml
+  #   env_file:
+  #     - ./.env.dev
+  #     - ./.env
 
   # --------------------------------------------------------------------------
   # HTTP gateway (nginx reverse proxy)

@@ -12,7 +12,7 @@
 #                - An empty volume for the first clone
 # Variables:     REPLICA_PRIMARY_HOST, POSTGRES_REPLICATION_USER,
 #                POSTGRES_REPLICATION_PASSWORD.
-#                TZ from the root .env.dev.
+#                TZ and VPN_DNS_IP from the root .env.dev.
 # ============================================================================
 
 services:
@@ -68,6 +68,12 @@ services:
       default:
         aliases:
           - postgres-replica
+    # VPN_DNS_IP: DNS server for names Docker DNS on this server does not know.
+    # Local names (same server) are still answered by Docker DNS first; other
+    # names go to the VPN host's DNS, which resolves the VPN host's services,
+    # so postgres-primary is found when the primary runs on another server.
+    dns:
+      - ${VPN_DNS_IP}
 
     # --------------------------------------------------------------------------
     # Storage and scripts

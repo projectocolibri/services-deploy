@@ -27,11 +27,15 @@ databases/*/backup/backups/
 # ----------------------------------------------------------------------------
 # VPN gateway state (WireGuard)
 # ----------------------------------------------------------------------------
-# Server keys, peer keys and generated client configs are secrets created at
-# runtime. Only the shared templates and the CoreDNS config are committed.
-gateway/vpn/config/*
-!gateway/vpn/config/templates/
-!gateway/vpn/config/coredns/
+# Host: server keys, peer keys and generated client configs are secrets
+# created at runtime. Only the shared templates and the CoreDNS config are
+# committed.
+gateway/vpn/host/config/*
+!gateway/vpn/host/config/templates/
+!gateway/vpn/host/config/coredns/
+# Client: peer.conf copied from the VPN host contains this server's private key.
+gateway/vpn/client/config/*
+!gateway/vpn/client/config/.gitkeep
 
 # ----------------------------------------------------------------------------
 # HTTP gateway certificates

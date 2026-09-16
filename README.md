@@ -61,7 +61,8 @@ Windows and open a new terminal. Without it, Compose stops with
 .env.dev                     global: project name, network, time zone
 compose.yaml                 includes every stack, defines the network
 gateway/
-  vpn/                       WireGuard VPN
+  vpn/host/                  WireGuard VPN server (server with the primaries)
+  vpn/client/                WireGuard peer for replica-only servers
   http/                      nginx for public apps (conf.d/, certs/)
 monitoring/
   pmm/                       PMM Server and custom dashboards
@@ -99,6 +100,7 @@ every stack and win over the stack files for the same key.
 | `PROJECT_NAME` | `services` | Prefix of containers and volumes. Renaming it orphans existing volumes. |
 | `NETWORK_NAME` | `services-internal-network` | Internal Docker network |
 | `NETWORK_SUBNET` | `172.30.0.0/16` | Its subnet, also routed through the VPN |
+| `VPN_DNS_IP` | `172.30.255.2` | Fixed address of the VPN host container, DNS for service names across servers |
 | `TZ` | `Etc/UTC` | Time zone of every container |
 
 UTC is recommended for `TZ`: PMM, Grafana and Dozzle show times in the
@@ -130,19 +132,57 @@ services:
 
 ## Gateway
 
-### VPN (WireGuard)
+### VPN host (WireGuard)
 
 Private access to every internal service. Clients resolve Docker service names.
 
 1. Set `VPN_HOST` (public IP or domain) and list the users in `VPN_PEERS`
-   (comma separated).
+   (comma separated, letters and digits only).
 2. Start the stack. Each user gets a config and a QR code in
-   `gateway/vpn/config/peer_<name>/`.
+   `gateway/vpn/host/config/peer_<name>/`.
 3. Import `peer_<name>.conf` into the WireGuard app, or scan `peer_<name>.png`.
 
 Only the VPN subnet and the internal network are routed through the tunnel.
-After changing `VPN_HOST`, delete `gateway/vpn/config/peer_*` so the client
-configs are regenerated.
+After changing `VPN_HOST`, delete `gateway/vpn/host/config/peer_*` so the
+client configs are regenerated.
+
+### VPN client (replica on another server)
+
+A server running only replicas joins the VPN host as a peer. The client brings
+the tunnel up on that server's host network, so its containers reach the
+primaries' network with no other change.
+
+On the **VPN host** (server with the primaries):
+
+1. Add a peer for the new server in `gateway/.env`, e.g.
+   `VPN_PEERS=admin,replica1`, and run `docker compose up -d vpn`.
+2. Copy `gateway/vpn/host/config/peer_replica1/peer_replica1.conf` to the new
+   server (it contains that server's private key).
+
+On the **replica server** (clone of this repository):
+
+1. Save the file as `gateway/vpn/client/config/peer.conf`.
+2. In the root `.env`, use a different subnet than the VPN host, e.g.
+   `NETWORK_SUBNET=172.31.0.0/16`. The client refuses to start if a tunnel
+   route overlaps a local one.
+3. In `gateway/compose.yaml`, comment out `vpn/host` and uncomment
+   `vpn/client`. Remove the monitoring stack from `compose.yaml`, and include
+   only `replica/` in `databases/mysql/compose.yaml` and
+   `databases/postgres/compose.yaml`.
+4. Use the same database passwords and `VPN_DNS_IP` as the VPN host.
+5. `docker compose up -d`, then check `docker compose ps vpn-client` is
+   healthy and the replication state (see [Databases](#databases)).
+
+Service names work across servers. The VPN host container has a fixed address
+(`VPN_DNS_IP`, default `172.30.255.2`) where its DNS server answers with the
+VPN host's service names. Replicas use it as their DNS server (`dns:`): Docker
+DNS still answers names on their own server first, and forwards the rest, such
+as `mysql-primary` on the VPN host, through the tunnel. The replica server
+needs no open inbound port.
+
+Not covered yet: the VPN host's admin panels and PMM cannot reach containers
+on the replica server, and `pmm-client-register.sh` only registers databases
+on its own network.
 
 ### HTTP (nginx)
 
@@ -232,7 +272,8 @@ Same for `postgres-replica-db` / `<PROJECT_NAME>_postgres-replica-data`.
 
 - [ ] Real passwords in every `.env`
 - [ ] `VPN_HOST` set to the server's public IP or domain
-- [ ] Firewall: only `51820/udp`, `80/tcp` and `443/tcp` open
+- [ ] Firewall: only `51820/udp`, `80/tcp` and `443/tcp` open (replica
+      servers: no inbound ports)
 - [ ] No `compose.override.yaml` publishing internal tools
 - [ ] Certificates in `gateway/http/certs/` for every public app
 - [ ] Docker log rotation configured

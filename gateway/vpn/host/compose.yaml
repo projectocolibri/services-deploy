@@ -1,17 +1,20 @@
 # ============================================================================
-# VPN gateway (WireGuard)
+# VPN host (WireGuard server)
 #
-# Purpose:       Runs a WireGuard server that gives administrators private
-#                access to the internal Docker network.
+# Purpose:       Runs the WireGuard server that gives administrators and other
+#                servers private access to this server's internal Docker
+#                network.
 # Role:          The only way to reach internal services (databases, admin
-#                panels, PMM, Dozzle). Clients resolve Docker service names
+#                panels, PMM, Dozzle). Peers are people (WireGuard app) or other
+#                servers running ../client. Peers resolve Docker service names
 #                through the DNS server built into the container.
+#                Run it on exactly one server: the one with the primaries.
 # Prerequisites: - Linux host with the WireGuard kernel module (kernel 5.6+)
 #                - UDP port VPN_PORT open in the firewall
 #                - VPN_HOST set to this server's public IP or domain
-# Variables:     VPN_HOST, VPN_PORT, VPN_PEERS, VPN_SUBNET, VPN_ALLOWED_IPS and
-#                from gateway/.env.dev and gateway/.env; TZ from the root
-#                .env.dev.
+# Variables:     VPN_HOST, VPN_PORT, VPN_PEERS, VPN_SUBNET and VPN_ALLOWED_IPS
+#                from gateway/.env.dev and gateway/.env; TZ and VPN_DNS_IP from the
+#                root .env.dev.
 # ============================================================================
 
 services:
@@ -55,6 +58,17 @@ services:
       PEERDNS: auto
       # LOG_CONFS: "false" keeps client configs and QR codes out of the logs.
       LOG_CONFS: "false"
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
+    # VPN_DNS_IP: fixed address of this container on the internal network. Its
+    # DNS server (CoreDNS, forwarding to Docker DNS) answers there, reachable
+    # from containers on this server and, through the VPN client, on other
+    # servers, which use it to resolve this server's service names.
+    networks:
+      default:
+        ipv4_address: ${VPN_DNS_IP}
 
     # --------------------------------------------------------------------------
     # Published ports
