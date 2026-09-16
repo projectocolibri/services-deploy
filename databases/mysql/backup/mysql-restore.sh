@@ -29,14 +29,21 @@
 # Variables:
 #   TARGET_TIME          (arg 1) stop replaying before this UTC time.
 #                        Default: empty (replay everything)
-#   BACKUP_DIR           (env) backup directory. Default: ./backups next to
-#                        this script (MYSQL_BACKUP_DIR's default)
+#   MYSQL_BACKUP_DIR     (env or databases/mysql/.env, .env.dev) MySQL backup
+#                        directory; relative to this script's directory
+#   BACKUP_DIR           (env or root .env, .env.dev) global backup directory,
+#                        used as BACKUP_DIR/mysql when MYSQL_BACKUP_DIR is unset.
+#                        Default when both are unset: ./backups/mysql next to
+#                        this script (the same rule as compose.yaml)
 #   RESTORE_NAME         (env) name of the temporary container and volume.
 #                        Default: mysql-restore
 #   MYSQL_ROOT_PASSWORD  (env) root password of the backed-up replica. Default:
 #                        read from databases/mysql/.env, then .env.dev
 #   MSYS_NO_PATHCONV     (env, exported) stops Git Bash from rewriting paths
-#   script_dir, stack_dir (local) this script's directory and the MySQL stack
+#   script_dir, stack_dir, root_dir
+#                        (local) this script's directory, the MySQL stack, the
+#                        repository root
+#   backup_dir           (local) resolved MySQL backup directory
 #   latest               (local) newest complete backup inside the container
 #   password             (local) resolved root password
 # ============================================================================
@@ -50,14 +57,34 @@ export MSYS_NO_PATHCONV=1
 target_time="${1:-}"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 stack_dir="$(dirname "${script_dir}")"
-backup_dir="${BACKUP_DIR:-${script_dir}/backups}"
+root_dir="$(cd "${stack_dir}/../.." && pwd)"
 name="${RESTORE_NAME:-mysql-restore}"
 
-password="${MYSQL_ROOT_PASSWORD:-}"
-for f in "${stack_dir}/.env" "${stack_dir}/.env.dev"; do
-    [ -n "${password}" ] && break
-    [ -f "${f}" ] && password="$(grep -E '^MYSQL_ROOT_PASSWORD=' "${f}" | tail -1 | cut -d= -f2- || true)"
-done
+# setting KEY FILE...: value of KEY from the environment, else from the first
+# file that sets it to a non-empty value (empty if none).
+setting() {
+    local key="$1" value="${!1:-}" f
+    shift
+    for f in "$@"; do
+        [ -n "${value}" ] && break
+        [ -f "${f}" ] && value="$(grep -E "^${key}=" "${f}" | tail -1 | cut -d= -f2- || true)"
+    done
+    echo "${value}"
+}
+
+# Same rule as compose.yaml: MYSQL_BACKUP_DIR, else BACKUP_DIR/mysql, else
+# ./backups/mysql; relative paths are relative to this script's directory.
+backup_dir="$(setting MYSQL_BACKUP_DIR "${stack_dir}/.env" "${stack_dir}/.env.dev")"
+if [ -z "${backup_dir}" ]; then
+    backup_dir="$(setting BACKUP_DIR "${root_dir}/.env" "${root_dir}/.env.dev")"
+    backup_dir="${backup_dir:-./backups}/mysql"
+fi
+case "${backup_dir}" in
+    /* | [A-Za-z]:*) ;;
+    *) backup_dir="${script_dir}/${backup_dir#./}" ;;
+esac
+
+password="$(setting MYSQL_ROOT_PASSWORD "${stack_dir}/.env" "${stack_dir}/.env.dev")"
 
 log() {
     echo "[mysql-restore] $*"

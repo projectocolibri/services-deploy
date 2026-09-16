@@ -21,6 +21,8 @@ services:
     # --------------------------------------------------------------------------
     image: percona/pmm-server:3
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [monitoring, pmm]
 
     # --------------------------------------------------------------------------
     # Server settings

@@ -21,6 +21,8 @@ services:
     # --------------------------------------------------------------------------
     image: percona/percona-server:8.4
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [primary, mysql-primary]
 
     # --------------------------------------------------------------------------
     # Credentials

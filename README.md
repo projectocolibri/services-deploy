@@ -58,7 +58,8 @@ Windows and open a new terminal. Without it, Compose stops with
 ## Repository layout
 
 ```
-.env.dev                     global: project name, network, time zone
+.env.dev                     global: server roles, project name, network,
+                             backup directory, time zone
 compose.yaml                 includes every stack, defines the network
 gateway/
   vpn/host/                  WireGuard VPN server (server with the primaries)
@@ -82,8 +83,52 @@ databases/
 ```
 
 Every folder with a `compose.yaml` is a stack. Stacks list their sub-stacks
-with `include`; remove an entry to leave that part out. No service depends on
+with `include`, and every stack is always included: what runs on a server is
+chosen by its roles (see [Server roles](#server-roles)). No service depends on
 another stack: each one waits for what it needs by itself.
+
+## Server roles
+
+Every service belongs to one or more Compose profiles. `COMPOSE_PROFILES` in the
+root `.env` lists the roles of **this** server, and `docker compose up -d`
+starts exactly those services. Every server runs the same committed files; only
+its root `.env` differs.
+
+| Profile | Services |
+|---|---|
+| `vpn-host` | WireGuard server (on the server with the primaries) |
+| `vpn-client` | WireGuard peer of another server's VPN host |
+| `http` | nginx gateway |
+| `monitoring` | PMM Server, PMM client + cAdvisor, Dozzle (or only `pmm`, `metrics`, `logs`) |
+| `primary` | MySQL and PostgreSQL primaries |
+| `replica` | MySQL and PostgreSQL replicas |
+| `backup` | Backups of the replicas and log streams (next to the replicas) |
+| `admin` | phpMyAdmin and pgAdmin |
+
+`primary`, `replica`, `backup` and `admin` also exist per engine, e.g.
+`mysql-primary`, `postgres-backup`.
+
+```env
+# One server with everything (default in .env.dev)
+COMPOSE_PROFILES=vpn-host,http,monitoring,primary,replica,backup,admin
+BACKUP_DIR=/srv/backups
+
+# Two servers: the primaries...
+COMPOSE_PROFILES=vpn-host,http,monitoring,primary,admin
+
+# ...and the replicas with their backups
+COMPOSE_PROFILES=vpn-client,replica,backup
+BACKUP_DIR=/srv/backups
+
+# Only MySQL, with backups
+COMPOSE_PROFILES=mysql-primary,mysql-replica,mysql-backup
+```
+
+After changing the roles, `docker compose up -d` starts the new services.
+Commands only see the active profiles, so stop services of a removed role
+explicitly, e.g. `docker compose --profile admin down`, or all of them with
+`docker compose --profile '*' down`. With no profile set, Compose starts
+nothing (`no service selected`).
 
 ## Configuration
 
@@ -99,6 +144,8 @@ every stack and win over the stack files for the same key.
 
 | Global variable | Default | Purpose |
 |---|---|---|
+| `COMPOSE_PROFILES` | all roles | What this server runs (see [Server roles](#server-roles)) |
+| `BACKUP_DIR` | `./backups` in each backup stack | Backup directory on this server (`mysql/`, `postgres/` inside) |
 | `PROJECT_NAME` | `services` | Prefix of containers and volumes. Renaming it orphans existing volumes. |
 | `NETWORK_NAME` | `services-internal-network` | Internal Docker network |
 | `NETWORK_SUBNET` | `172.30.0.0/16` | Its subnet, also routed through the VPN |
@@ -167,10 +214,9 @@ On the **replica server** (clone of this repository):
 2. In the root `.env`, use a different subnet than the VPN host, e.g.
    `NETWORK_SUBNET=172.31.0.0/16`. The client refuses to start if a tunnel
    route overlaps a local one.
-3. In `gateway/compose.yaml`, comment out `vpn/host` and uncomment
-   `vpn/client`. Remove the monitoring stack from `compose.yaml`, and include
-   only `replica/` and `backup/` in `databases/mysql/compose.yaml` and
-   `databases/postgres/compose.yaml` (on the VPN host, remove `backup/`).
+3. Set the roles in the root `.env`: `COMPOSE_PROFILES=vpn-client,replica,backup`
+   and `BACKUP_DIR`. On the VPN host, remove `replica` and `backup` from its
+   roles.
 4. Use the same database passwords and `VPN_DNS_IP` as the VPN host.
 5. `docker compose up -d`, then check `docker compose ps vpn-client` is
    healthy and the replication state (see [Databases](#databases)).
@@ -228,17 +274,17 @@ the servers in `ADMIN_HOSTS` / `ADMIN_HOSTS_LABELS`.
 
 ### Backups
 
-The `backup/` stacks run on the server with the replicas and write to a local
-directory there. Full backups are taken from the replicas (no load on the
-primaries); the primaries' logs are streamed continuously for point-in-time
-recovery.
+The `backup` role runs on the server with the replicas and writes to
+`BACKUP_DIR` there (`mysql/` and `postgres/` inside). Full backups are taken
+from the replicas (no load on the primaries); the primaries' logs are streamed
+continuously for point-in-time recovery.
 
 | | MySQL (`databases/mysql/backup`) | PostgreSQL (`databases/postgres/backup`) |
 |---|---|---|
 | Daily backup | `mysql-backup`: Percona XtraBackup of the replica, zstd | `postgres-backup`: `pg_basebackup` of the standby, lz4 |
 | Verification | Decompress and prepare a copy after every backup | `pg_verifybackup` against the manifest |
 | Point in time | `mysql-binlog`: binary logs streamed from the primary | `postgres-wal`: WAL streamed from the primary (replication slot) |
-| Directory | `MYSQL_BACKUP_DIR`: `full/`, `binlog/` | `POSTGRES_BACKUP_DIR`: `base/`, `wal/` |
+| Directory | `BACKUP_DIR/mysql` (or `MYSQL_BACKUP_DIR`): `full/`, `binlog/` | `BACKUP_DIR/postgres` (or `POSTGRES_BACKUP_DIR`): `base/`, `wal/` |
 | Schedule | `MYSQL_BACKUP_TIME` (UTC), default 02:00 | `POSTGRES_BACKUP_TIME` (`TZ`), default 02:30 |
 
 - A backup is written to `<timestamp>.partial` and renamed only when complete
@@ -250,7 +296,7 @@ recovery.
 - Health checks: the backup services turn unhealthy when the newest backup is
   over 26 hours old, the streamers when they stop.
 - Backup files are readable only by root. Use a separate disk in production
-  (`MYSQL_BACKUP_DIR=/srv/backups/mysql`, ...).
+  (`BACKUP_DIR=/srv/backups`).
 - The primary keeps WAL for the PostgreSQL stream while it is down, up to
   `POSTGRES_MAX_SLOT_WAL_KEEP_SIZE` (default 10GB). If backups are removed for
   good, drop the slot:
@@ -343,6 +389,7 @@ Same for `postgres-replica-db` / `<PROJECT_NAME>_postgres-replica-data`.
 - [ ] Docker log rotation configured
 - [ ] Replication checked
 - [ ] PMM alert rules and contact points configured and tested
-- [ ] `MYSQL_BACKUP_DIR` and `POSTGRES_BACKUP_DIR` on a separate disk, backup
+- [ ] `COMPOSE_PROFILES` set to this server's roles
+- [ ] `BACKUP_DIR` on a separate disk, backup
       services healthy, and a test restore done
 - [ ] Off-site copy of the backup directories

@@ -31,6 +31,8 @@ services:
     # default route when a tunnel fails (fatal on the host network).
     image: lscr.io/linuxserver/wireguard:1.0.20260223-r0-ls122
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [vpn-client]
 
     # --------------------------------------------------------------------------
     # Host networking

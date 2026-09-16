@@ -20,6 +20,8 @@ services:
     # ../compose.yaml, and depending on an undefined service is an error.
     image: phpmyadmin:5.2
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [admin, mysql-admin]
 
     # --------------------------------------------------------------------------
     # Server list and limits

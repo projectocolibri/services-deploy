@@ -26,12 +26,19 @@
 # Variables:
 #   TARGET_TIME       (arg 1) recover up to this UTC time. Default: empty
 #                     (recover everything received)
-#   BACKUP_DIR        (env) backup directory. Default: ./backups next to this
-#                     script (POSTGRES_BACKUP_DIR's default)
+#   POSTGRES_BACKUP_DIR (env or databases/postgres/.env, .env.dev) PostgreSQL
+#                     backup directory; relative to this script's directory
+#   BACKUP_DIR        (env or root .env, .env.dev) global backup directory,
+#                     used as BACKUP_DIR/postgres when POSTGRES_BACKUP_DIR is
+#                     unset. Default when both are unset: ./backups/postgres
+#                     next to this script (the same rule as compose.yaml)
 #   RESTORE_NAME      (env) name of the temporary container and volume.
 #                     Default: postgres-restore
 #   MSYS_NO_PATHCONV  (env, exported) stops Git Bash from rewriting paths
-#   script_dir        (local) this script's directory
+#   script_dir, stack_dir, root_dir
+#                     (local) this script's directory, the PostgreSQL stack,
+#                     the repository root
+#   backup_dir        (local) resolved PostgreSQL backup directory
 #   latest, seg       (local, in container) newest backup, partial segment name
 # ============================================================================
 
@@ -43,8 +50,34 @@ export MSYS_NO_PATHCONV=1
 # ----------------------------------------------------------------------------
 target_time="${1:-}"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-backup_dir="${BACKUP_DIR:-${script_dir}/backups}"
+stack_dir="$(dirname "${script_dir}")"
+root_dir="$(cd "${stack_dir}/../.." && pwd)"
 name="${RESTORE_NAME:-postgres-restore}"
+
+# setting KEY FILE...: value of KEY from the environment, else from the first
+# file that sets it to a non-empty value (empty if none).
+setting() {
+    local key="$1" value="${!1:-}" f
+    shift
+    for f in "$@"; do
+        [ -n "${value}" ] && break
+        [ -f "${f}" ] && value="$(grep -E "^${key}=" "${f}" | tail -1 | cut -d= -f2- || true)"
+    done
+    echo "${value}"
+}
+
+# Same rule as compose.yaml: POSTGRES_BACKUP_DIR, else BACKUP_DIR/postgres,
+# else ./backups/postgres; relative paths are relative to this script's
+# directory.
+backup_dir="$(setting POSTGRES_BACKUP_DIR "${stack_dir}/.env" "${stack_dir}/.env.dev")"
+if [ -z "${backup_dir}" ]; then
+    backup_dir="$(setting BACKUP_DIR "${root_dir}/.env" "${root_dir}/.env.dev")"
+    backup_dir="${backup_dir:-./backups}/postgres"
+fi
+case "${backup_dir}" in
+    /* | [A-Za-z]:*) ;;
+    *) backup_dir="${script_dir}/${backup_dir#./}" ;;
+esac
 
 log() {
     echo "[postgres-restore] $*"

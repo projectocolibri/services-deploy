@@ -4,8 +4,9 @@
 # Purpose:       Single entry point for the whole deployment. It defines no
 #                services of its own: it includes the gateway, monitoring and
 #                database stacks and declares the network they all share.
-# Role:          `docker compose up -d` from this directory starts every
-#                included stack as one Compose project.
+# Role:          `docker compose up -d` from this directory starts the services
+#                of the server roles in COMPOSE_PROFILES (root .env), as one
+#                Compose project. Every server uses these same files.
 # Prerequisites: - Docker Engine with Docker Compose v2.24 or later (for
 #                  `include` with `env_file`)
 #                - COMPOSE_ENV_FILES=.env.dev,.env set in the shell, so the
@@ -13,9 +14,10 @@
 #                - An .env file (may be empty) at the root and in every stack
 #                  directory: gateway/, monitoring/, databases/mysql/,
 #                  databases/postgres/
-# Variables:     PROJECT_NAME, NETWORK_NAME, NETWORK_SUBNET (and TZ, used by
-#                every service) from ./.env.dev and ./.env. These global values
-#                reach every included stack. Each stack also loads its own
+# Variables:     COMPOSE_PROFILES, PROJECT_NAME, NETWORK_NAME, NETWORK_SUBNET
+#                (and TZ, VPN_DNS_IP, BACKUP_DIR, used by the stacks) from
+#                ./.env.dev and ./.env. These global values reach every
+#                included stack. Each stack also loads its own
 #                .env.dev and .env (see the stack's compose.yaml).
 # ============================================================================
 
@@ -28,9 +30,9 @@ name: ${PROJECT_NAME}
 # ----------------------------------------------------------------------------
 # Included stacks
 # ----------------------------------------------------------------------------
-# Each entry is a stack directory with its own compose.yaml. Remove or comment
-# out an entry to leave that stack out of the deployment. No stack depends on
-# another: services wait for their dependencies by themselves.
+# Each entry is a stack directory with its own compose.yaml. All stacks are
+# always included; COMPOSE_PROFILES decides which services run. No stack
+# depends on another: services wait for their dependencies by themselves.
 include:
   # Gateway: WireGuard VPN (private access) and nginx (public web apps).
   - path: ./gateway/compose.yaml

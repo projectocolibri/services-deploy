@@ -25,6 +25,8 @@ services:
     # which shuts the server down on purpose.
     image: percona/percona-server:8.4
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [replica, mysql-replica]
 
     # --------------------------------------------------------------------------
     # Replication settings

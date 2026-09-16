@@ -9,8 +9,9 @@
 #                                              for servers running only replicas
 #                - HTTP       (./http):        public web apps behind nginx,
 #                                              TLS ends here
-#                Include either the VPN host or the VPN client on a server,
-#                never both.
+#                Each service runs only when its profile is in COMPOSE_PROFILES
+#                (root .env): vpn-host, vpn-client, http. Enable either the VPN
+#                host or the VPN client on a server, never both.
 # Prerequisites: - gateway/.env must exist (may be empty)
 #                - Firewall open for the VPN (UDP, host only) and HTTP/HTTPS
 #                  (TCP) ports
@@ -33,11 +34,12 @@ include:
   # --------------------------------------------------------------------------
   # VPN client (WireGuard peer of another server's VPN host)
   # --------------------------------------------------------------------------
-  # On a replica-only server: comment out the VPN host above and uncomment this.
-  # - path: ./vpn/client/compose.yaml
-  #   env_file:
-  #     - ./.env.dev
-  #     - ./.env
+  - path: ./vpn/client/compose.yaml
+    env_file:
+      # Committed development defaults.
+      - ./.env.dev
+      # Local, uncommitted overrides and secrets.
+      - ./.env
 
   # --------------------------------------------------------------------------
   # HTTP gateway (nginx reverse proxy)

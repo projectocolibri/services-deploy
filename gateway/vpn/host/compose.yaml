@@ -25,6 +25,8 @@ services:
     # linuxserver.io WireGuard image, pinned to an exact release.
     image: lscr.io/linuxserver/wireguard:1.0.20260223-r0-ls122
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [vpn-host]
 
     # --------------------------------------------------------------------------
     # Kernel permissions

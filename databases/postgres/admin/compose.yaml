@@ -22,6 +22,8 @@ services:
     # ../compose.yaml, and depending on an undefined service is an error.
     image: dpage/pgadmin4:9
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [admin, postgres-admin]
 
     # --------------------------------------------------------------------------
     # Login and server list

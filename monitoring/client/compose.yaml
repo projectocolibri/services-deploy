@@ -25,6 +25,8 @@ services:
     # Server is not up yet, setup fails and the restart policy retries it.
     image: percona/pmm-client:3
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [monitoring, metrics]
 
     # --------------------------------------------------------------------------
     # PMM agent settings
@@ -94,6 +96,8 @@ services:
     # --------------------------------------------------------------------------
     image: gcr.io/cadvisor/cadvisor:v0.52.1
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [monitoring, metrics]
 
     # --------------------------------------------------------------------------
     # Host access

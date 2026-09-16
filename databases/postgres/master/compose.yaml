@@ -21,6 +21,8 @@ services:
     # --------------------------------------------------------------------------
     image: percona/percona-distribution-postgresql:17
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [primary, postgres-primary]
 
     # --------------------------------------------------------------------------
     # Credentials

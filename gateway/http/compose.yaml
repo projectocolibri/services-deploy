@@ -20,6 +20,8 @@ services:
     # --------------------------------------------------------------------------
     image: nginx:1.28-alpine
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [http]
 
     # --------------------------------------------------------------------------
     # Time zone

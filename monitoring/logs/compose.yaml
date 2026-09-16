@@ -20,6 +20,8 @@ services:
     # --------------------------------------------------------------------------
     image: amir20/dozzle:v11.0.1
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [monitoring, logs]
 
     # --------------------------------------------------------------------------
     # Mode and settings

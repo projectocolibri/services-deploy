@@ -10,7 +10,8 @@
 #                    verified and compressed, with retention
 #                  - postgres-wal: streams the primary's WAL through a
 #                    replication slot
-#                Backups are written to POSTGRES_BACKUP_DIR on this server.
+#                Backups are written to BACKUP_DIR/postgres (or
+#                POSTGRES_BACKUP_DIR) on this server.
 # Prerequisites: - The replica (../replica) running on this server
 #                - The primary reachable as postgres-primary (same server, or
 #                  through the VPN client and VPN_DNS_IP)
@@ -24,7 +25,7 @@
 #                REPLICA_PRIMARY_HOST, POSTGRES_BACKUP_DIR,
 #                POSTGRES_BACKUP_TIME, POSTGRES_BACKUP_RETENTION_DAYS,
 #                POSTGRES_BACKUP_VERIFY, POSTGRES_WAL_SLOT.
-#                TZ and VPN_DNS_IP from the root .env.dev.
+#                TZ, VPN_DNS_IP and BACKUP_DIR from the root .env.dev.
 # ============================================================================
 
 services:
@@ -36,6 +37,8 @@ services:
     # write the backups regardless of the directory's owner.
     image: percona/percona-distribution-postgresql:17
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [backup, postgres-backup]
     user: root
 
     # --------------------------------------------------------------------------
@@ -66,9 +69,10 @@ services:
     # Backups and scripts
     # --------------------------------------------------------------------------
     volumes:
-      # POSTGRES_BACKUP_DIR: backup destination on this server. Relative paths
-      # are relative to this directory. Default: ./backups.
-      - ${POSTGRES_BACKUP_DIR:-./backups}:/backups
+      # Backup destination on this server: POSTGRES_BACKUP_DIR if set, else
+      # BACKUP_DIR/postgres (root .env.dev). Relative paths are relative to this
+      # directory. Default: ./backups/postgres.
+      - ${POSTGRES_BACKUP_DIR:-${BACKUP_DIR:-./backups}/postgres}:/backups
       # Scheduler script.
       - ./postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro
 
@@ -89,6 +93,8 @@ services:
     # --------------------------------------------------------------------------
     image: percona/percona-distribution-postgresql:17
     restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [backup, postgres-backup]
     user: root
 
     # --------------------------------------------------------------------------
@@ -123,8 +129,8 @@ services:
     # Backups and scripts
     # --------------------------------------------------------------------------
     volumes:
-      # POSTGRES_BACKUP_DIR: same destination as postgres-backup (wal/ subfolder).
-      - ${POSTGRES_BACKUP_DIR:-./backups}:/backups
+      # Same destination as postgres-backup (wal/ subfolder).
+      - ${POSTGRES_BACKUP_DIR:-${BACKUP_DIR:-./backups}/postgres}:/backups
       # Stream script.
       - ./postgres-wal.sh:/usr/local/bin/postgres-wal.sh:ro
 
