@@ -1,93 +1,108 @@
-# Colibri services deploy
+# Services deploy
 
-Docker Compose deployment of the Colibri infrastructure: MySQL and PostgreSQL
-(master, replica, backups, admin panels), a VPN and an HTTP gateway, and
-monitoring.
+Docker Compose deployment of shared infrastructure: MySQL (Percona Server) and
+PostgreSQL (Percona Distribution), each with a read-only replica, a VPN and an
+HTTP gateway, and monitoring (PMM and Dozzle).
 
-Everything runs as one Compose project (`colibri-services`). The only ports
-open to the outside are the VPN and the HTTP gateway; every other service is
-internal and reached through the VPN.
+Everything runs on **one server**, as one Compose project (`services`) brought
+up by a single `docker compose up -d`. The only ports open to the outside are
+the VPN and the HTTP gateway; every other service is internal and reached
+through the VPN.
 
 ```
-                    Internet
-             ┌──────────┴──────────┐
-         UDP 51820            TCP 80 / 443
-             │                     │
-       ┌─────▼─────┐         ┌─────▼─────┐
-       │    VPN    │         │   HTTP    │
-       │ WireGuard │         │   nginx   │
-       └─────┬─────┘         └─────┬─────┘
-             │ admins              │ public apps
-   ──────────┴──── internal network 172.30.0.0/16 ─────────
-     MySQL · PostgreSQL · phpMyAdmin · pgAdmin · Netdata · Dozzle
+                           Internet
+                  ┌───────────┴───────────┐
+              UDP 51820              TCP 80 / 443
+                  │                       │
+            ┌─────▼─────┐           ┌─────▼─────┐
+            │    VPN    │           │   HTTP    │
+            │ WireGuard │           │   nginx   │
+            └─────┬─────┘           └─────┬─────┘
+                  │ admins                │ public apps
+ ─────────────────┴──── internal network 172.30.0.0/16 ─┴──────────────────
+  mysql-primary     ── replication ────►  mysql-replica     (read only)
+  postgres-primary  ── streaming ──────►  postgres-replica  (read only)
+  PMM, Dozzle, admin panels
 ```
 
 ## Requirements
 
 - Docker Engine with Docker Compose v2.24 or later
 - Linux server (Docker Desktop works for development)
+- 2+ CPU cores and 4+ GB RAM for PMM Server
 
 ## Quick start
 
 ```sh
-git clone <repository> colibri-services-deploy
-cd colibri-services-deploy
+git clone <repository> services-deploy
+cd services-deploy
 
-# every stack needs a local .env file (not committed, can be empty)
 touch gateway/.env monitoring/.env databases/mysql/.env databases/postgres/.env
 
 docker compose up -d
 docker compose ps
 ```
 
-Before deploying to a real server, change the default passwords and set
-`VPN_HOST` (see [Configuration](#configuration)).
+The replicas clone their primary on the first start, so give them a minute
+(the MySQL replica restarts once after cloning). Before deploying to a real
+server, change the default passwords and set `VPN_HOST`.
 
 ## Repository layout
 
 ```
-compose.yaml                 root: includes every stack, fixes the internal network
+compose.yaml                 includes every stack, defines the network
 gateway/
   vpn/                       WireGuard VPN
   http/                      nginx for public apps (conf.d/, certs/)
 monitoring/
-  netdata/                   metrics, databases, uptime checks, alerts
-  logs/                      Dozzle log viewer
+  pmm/                       PMM Server and custom dashboards
+  client/                    PMM client and cAdvisor
+  logs/                      Dozzle
 databases/
-  mysql/                     Percona Server: master, replica, backup, admin
-  postgres/                  Percona PostgreSQL: master, replica, backup, admin
+  mysql/
+    master/                  primary, read/write (mysql-db)
+    replica/                 read-only replica (mysql-replica-db)
+    admin/                   phpMyAdmin
+  postgres/
+    master/                  primary, read/write (postgres-db)
+    replica/                 read-only replica (postgres-replica-db)
+    admin/                   pgAdmin
 ```
 
-Every folder with a `compose.yaml` is a stack. Stacks with sub-stacks list them
-with `include`: **comment out an entry to leave that part out** (for example the
-replica, or the whole monitoring stack). No service depends on another stack;
-each one waits for what it needs by itself.
+Every folder with a `compose.yaml` is a stack. Stacks list their sub-stacks
+with `include`; remove an entry to leave that part out. No service depends on
+another stack: each one waits for what it needs by itself.
 
 ## Configuration
 
-Each stack loads two env files, in order:
+Every stack loads two env files, in order:
 
 | File | Committed | Purpose |
 |---|---|---|
-| `.env.dev` | yes | Defaults for development |
+| `.env.dev` | yes | Development defaults |
 | `.env` | no | Local overrides and secrets (wins over `.env.dev`) |
 
-Put production values in `.env` on each server. The most important ones:
+A root `.env` is optional and wins over both stack files for the whole project.
+
+Production values to set:
 
 | Stack | Variables |
 |---|---|
-| `gateway` | `VPN_HOST` (public IP / domain), `VPN_PEERS` |
-| `databases/mysql` | `MYSQL_ROOT_PASSWORD`, `MYSQL_USER_PASSWORD`, `MYSQL_REPLICATION_PASSWORD`, `MYSQL_MONITOR_PASSWORD` |
-| `databases/postgres` | `POSTGRES_PASSWORD`, `POSTGRES_REPLICATION_PASSWORD`, `POSTGRES_MONITOR_PASSWORD`, `ADMIN_PASSWORD` |
-| `monitoring` | `MONITOR_*_PASSWORD`, SMTP and Slack settings |
+| `gateway` | `VPN_HOST`, `VPN_PEERS` |
+| `databases/mysql` | `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_USER_PASSWORD`, `MYSQL_REPLICATION_PASSWORD`, `MYSQL_MONITOR_PASSWORD` |
+| `databases/postgres` | `POSTGRES_PASSWORD`, `POSTGRES_REPLICATION_PASSWORD`, `POSTGRES_MONITOR_PASSWORD`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
+| `monitoring` | `PMM_ADMIN_PASSWORD`, `MONITOR_MYSQL_PASSWORD`, `MONITOR_POSTGRES_PASSWORD`, `SMTP_*` |
 
-For local tests only, `compose.override.yaml` (not committed) can publish
-internal tools on `127.0.0.1`:
+The `MONITOR_*` credentials must match the `*_MONITOR_*` values of the database
+stacks.
+
+For local tests, a `compose.override.yaml` (not committed) can publish internal
+tools on `127.0.0.1`:
 
 ```yaml
 services:
-  netdata:
-    ports: ["127.0.0.1:19999:19999"]
+  pmm-server:
+    ports: ["127.0.0.1:8443:8443"]
   dozzle:
     ports: ["127.0.0.1:8888:8080"]
 ```
@@ -96,12 +111,12 @@ services:
 
 ### VPN (WireGuard)
 
-Private access to every internal service. Clients resolve Docker service names,
-so tools are reached by name.
+Private access to every internal service. Clients resolve Docker service names.
 
-1. List the users in `VPN_PEERS` (comma separated) and set `VPN_HOST`.
-2. Start the stack. Each user gets a config file and a QR code in
-   `gateway/vpn/config/peer_<name>/` (never commit this folder).
+1. Set `VPN_HOST` (public IP or domain) and list the users in `VPN_PEERS`
+   (comma separated).
+2. Start the stack. Each user gets a config and a QR code in
+   `gateway/vpn/config/peer_<name>/`.
 3. Import `peer_<name>.conf` into the WireGuard app, or scan `peer_<name>.png`.
 
 Only the VPN subnet and the internal network are routed through the tunnel.
@@ -112,105 +127,94 @@ configs are regenerated.
 
 Public web apps. Requests for unknown hosts are refused.
 
-1. Copy `gateway/http/conf.d/app.conf.example` to `<app>.conf` and adjust the
+1. Copy `gateway/http/conf.d/app.conf.example` to `<app>.conf` and set the
    domain and upstream (`proxy_pass http://<service>:<port>`).
 2. Put the certificate in `gateway/http/certs/<domain>/fullchain.pem` and
-   `privkey.pem` (never committed).
+   `privkey.pem`.
 3. Reload: `docker compose exec http nginx -s reload`.
 
 ## Databases
 
-MySQL (Percona Server 8.0) and PostgreSQL (Percona Distribution 17) follow the
-same structure:
-
-| Sub-stack | MySQL | PostgreSQL |
+| Engine | Primary (read/write) | Replica (read only) |
 |---|---|---|
-| master | `mysql-db` | `postgres-db` |
-| replica | `mysql-replica`: clones the master (`CLONE INSTANCE`), then GTID replication | `postgres-replica`: clones the master (`pg_basebackup`), then streaming replication |
-| backup | Percona XtraBackup | `pg_basebackup` |
-| admin | phpMyAdmin (`mysql-admin`) | pgAdmin (`postgres-admin`) |
+| MySQL (Percona Server 8.4) | `mysql-primary:3306` | `mysql-replica:3306` |
+| PostgreSQL (Percona Distribution 17) | `postgres-primary:5432` | `postgres-replica:5432` |
 
-The replica sets itself up on its first start; the master only needs to be
-reachable. A fresh volume is required to re-clone a replica.
+Apps connect by role alias (`*-primary`, `*-replica`), never by service name.
 
-### Backups
+- **MySQL**: the replica clones the primary on its first start
+  (`CLONE INSTANCE`), then follows it with GTID replication under
+  `super_read_only`.
+- **PostgreSQL**: the replica clones the primary on its first start
+  (`pg_basebackup`), then streams its WAL as a hot standby.
+- Replication is asynchronous. The replica is for read queries and reporting:
+  it runs on the same machine and is not a backup.
 
-Both backup services take a **full backup once a day and incremental backups
-every `BACKUP_INTERVAL`** on top of it. Failed backups are deleted so they never
-become the base of the next one.
+Replication state:
 
-| Variable | Description |
-|---|---|
-| `BACKUP_HOST` | Database to back up (master or replica) |
-| `BACKUP_HOST_USER` / `BACKUP_HOST_PASSWORD` | Account used for the backup |
-| `BACKUP_HOST_VOLUME` | MySQL only: data volume of `BACKUP_HOST` |
-| `BACKUP_INTERVAL` | Time between backups (`30m`, `4h`, `1d`) |
+```sh
+docker compose exec mysql-replica-db mysql -uroot -p -e "SHOW REPLICA STATUS\G"
+docker compose exec postgres-replica-db psql -U postgres -c "SELECT status, sender_host FROM pg_stat_wal_receiver"
+docker compose exec postgres-db psql -U postgres -c "SELECT client_addr, state, replay_lag FROM pg_stat_replication"
+```
 
-Backups are written to `databases/<engine>/backup/backups/<engine>/<host>/<date>/`
-(`full/`, then `incHHMMSS/`), with a `.log` per day.
+### Admin panels
 
-Restore:
-
-- **MySQL**: `xtrabackup --prepare --apply-log-only` on `full`, then on each
-  `incHHMMSS` in order with `--incremental-dir`, then a final `--prepare`.
-- **PostgreSQL**: `pg_combinebackup full inc... -o <restore dir>`.
+phpMyAdmin (`http://mysql-admin`) and pgAdmin (`http://postgres-admin`) list
+the servers in `ADMIN_HOSTS` / `ADMIN_HOSTS_LABELS`.
 
 ## Monitoring
 
 | Tool | What it shows | URL (through the VPN) |
 |---|---|---|
-| **Netdata** | Host and per-container CPU, memory, disk I/O and network; MySQL and PostgreSQL metrics including replication lag; HTTP / TCP uptime checks; alerts | `http://netdata:19999` |
-| **Dozzle** | Live logs of every container, searchable per container | `http://dozzle:8080` |
+| **PMM** | Server resources, MySQL / PostgreSQL dashboards and replication, Query Analytics, per-container metrics, alerts | `https://pmm-server:8443` (user `admin`) |
+| **Dozzle** | Live logs of every container | `http://dozzle:8080` |
 
-Configuration lives in `monitoring/netdata/config/`:
+- The PMM client registers the server as a node named after its hostname, and
+  its cAdvisor as `cadvisor-<hostname>`.
+- With `MONITOR_DATABASES=true` it also registers whichever databases are
+  running. Restart `pmm-client` to register a database started later.
 
-- `go.d/mysql.conf`, `go.d/postgres.conf`: databases to monitor
-- `go.d/httpcheck.conf`, `go.d/portcheck.conf`: uptime checks
-- `health_alarm_notify.conf`: notification channels
+### Custom dashboards
 
-Alerts are sent by email and Slack once enabled in `monitoring/.env`:
+**Databases Overview** and **Containers Overview**, under
+**Dashboards → Custom**, are provisioned from
+`monitoring/pmm/dashboards/Custom/`. PMM re-reads that folder every 60 seconds,
+so edit the JSON files rather than the UI.
 
-```env
-ALERT_EMAIL_ENABLED=YES
-ALERT_EMAILS=team@example.com
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=...
-SMTP_PASSWORD=...
-SMTP_FROM=netdata@example.com
+### Alerts
 
-ALERT_SLACK_ENABLED=YES
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
-SLACK_CHANNEL=#alerts
-```
+Configured in the PMM UI (**Alerting**): contact points (email needs
+`ALERT_EMAIL_ENABLED=true` and the `SMTP_*` settings), alert rules and
+notification policies. They are stored in the `pmm-data` volume.
 
-Dozzle reads the logs Docker keeps. On a server, cap their size in
-`/etc/docker/daemon.json`:
+Cap Docker log size on the server in `/etc/docker/daemon.json`:
 
 ```json
 { "log-driver": "json-file", "log-opts": { "max-size": "50m", "max-file": "5" } }
 ```
 
-## Service addresses
+## Operations
 
-Through the VPN:
+### Rebuild a replica
 
-| Service | Address |
-|---|---|
-| phpMyAdmin | `http://mysql-admin` |
-| pgAdmin | `http://postgres-admin` |
-| Netdata | `http://netdata:19999` |
-| Dozzle | `http://dozzle:8080` |
-| MySQL master / replica | `mysql-db:3306` / `mysql-replica:3306` |
-| PostgreSQL master / replica | `postgres-db:5432` / `postgres-replica:5432` |
+```sh
+docker compose rm -sf mysql-replica-db
+docker volume rm services_mysql-replica-data
+docker compose up -d mysql-replica-db
+docker compose restart pmm-client
+```
+
+Same for `postgres-replica-db` / `services_postgres-replica-data`.
 
 ## Production checklist
 
-- [ ] Real passwords in every `.env` (none of the `.env.dev` defaults)
+- [ ] Real passwords in every `.env`
 - [ ] `VPN_HOST` set to the server's public IP or domain
 - [ ] Firewall: only `51820/udp`, `80/tcp` and `443/tcp` open
 - [ ] No `compose.override.yaml` publishing internal tools
 - [ ] Certificates in `gateway/http/certs/` for every public app
 - [ ] Docker log rotation configured
-- [ ] Alerts enabled and tested (email and Slack)
-- [ ] A backup restored at least once
+- [ ] Replication checked
+- [ ] PMM alert rules and contact points configured and tested
+- [ ] Backups configured

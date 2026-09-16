@@ -1,0 +1,43 @@
+services:
+  pmm-client:
+    image: percona/pmm-client:3
+    restart: always
+    environment:
+      PMM_AGENT_SERVER_ADDRESS: ${MONITOR_SERVER_ADDRESS}
+      PMM_AGENT_SERVER_USERNAME: admin
+      PMM_AGENT_SERVER_PASSWORD: ${PMM_ADMIN_PASSWORD}
+      PMM_AGENT_SERVER_INSECURE_TLS: 1
+      PMM_AGENT_CONFIG_FILE: config/pmm-agent.yaml
+      PMM_AGENT_SETUP: 1
+      PMM_AGENT_SETUP_FORCE: 1
+      PMM_AGENT_PRERUN_SCRIPT: bash /usr/local/bin/pmm-client-register.sh
+      MONITOR_DATABASES: ${MONITOR_DATABASES:-true}
+      MONITOR_MYSQL_USER: ${MONITOR_MYSQL_USER}
+      MONITOR_MYSQL_PASSWORD: ${MONITOR_MYSQL_PASSWORD}
+      MONITOR_POSTGRES_USER: ${MONITOR_POSTGRES_USER}
+      MONITOR_POSTGRES_PASSWORD: ${MONITOR_POSTGRES_PASSWORD}
+    entrypoint: ["/bin/bash", "/usr/local/bin/pmm-client-entrypoint.sh"]
+    network_mode: service:cadvisor
+    volumes:
+      - /etc/hostname:/host/etc/hostname:ro
+      - ./pmm-client-entrypoint.sh:/usr/local/bin/pmm-client-entrypoint.sh:ro
+      - ./pmm-client-register.sh:/usr/local/bin/pmm-client-register.sh:ro
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    restart: always
+    privileged: true
+    devices:
+      - /dev/kmsg
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
+      - --disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro

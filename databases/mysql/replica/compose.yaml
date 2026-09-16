@@ -1,30 +1,29 @@
 services:
-  mysql-replica:
-    image: percona/percona-server:8.0
+  mysql-replica-db:
+    image: percona/percona-server:8.4
     restart: always
-    # No depends_on on the master: sub-stacks can be commented out in
-    # ../compose.yaml. The entrypoint script waits for the master instead.
     environment:
-      # same root password as the master: needed to start before the clone,
-      # and after the clone this instance has the master's users
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MASTER_HOST: ${REPLICA_MASTER_HOST}
+      PRIMARY_HOST: ${REPLICA_PRIMARY_HOST:-mysql-primary}
       REPLICATION_USER: ${MYSQL_REPLICATION_USER}
       REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
-    entrypoint: ["/bin/bash", "/usr/local/bin/replica-entrypoint.sh"]
-    # relay-log: fixed name, the container hostname changes on every recreate
+    entrypoint: ["/bin/bash", "/usr/local/bin/mysql-replica-entrypoint.sh"]
     command:
       - mysqld
-      - --server-id=${REPLICA_SERVER_ID}
-      - --read-only=${REPLICA_READ_ONLY}
+      - --log-bin=mysql-bin
       - --gtid-mode=ON
       - --enforce-gtid-consistency=ON
+      - --plugin-load-add=mysql_clone.so
+      - --read-only=ON
       - --relay-log=mysql-replica-relay-bin
       - --relay-log-recovery=ON
-      - --plugin-load-add=mysql_clone.so
+    networks:
+      default:
+        aliases:
+          - mysql-replica
     volumes:
       - mysql-replica-data:/var/lib/mysql
-      - ./replica-entrypoint.sh:/usr/local/bin/replica-entrypoint.sh:ro
+      - ./mysql-replica-entrypoint.sh:/usr/local/bin/mysql-replica-entrypoint.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\""]
       interval: 10s

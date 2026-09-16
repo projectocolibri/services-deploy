@@ -2,12 +2,7 @@ services:
   mysql-admin:
     image: phpmyadmin:5.2
     restart: always
-    # No depends_on on the databases: sub-stacks can be commented out in
-    # ../compose.yaml, and depending on an undefined service is an error.
     environment:
-      # Servers offered on the login screen (comma separated)
       PMA_HOSTS: ${ADMIN_HOSTS}
       PMA_VERBOSES: ${ADMIN_HOSTS_LABELS}
       UPLOAD_LIMIT: ${ADMIN_UPLOAD_LIMIT:-64M}
-    # No published ports: reachable only through the VPN gateway
-    # (http://mysql-admin)

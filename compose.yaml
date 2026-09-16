@@ -1,43 +1,17 @@
-# ============================================================================
-# Root Compose entrypoint for the Colibri services deployment.
-#
-# This file holds no services of its own: it only aggregates the per-domain
-# stacks below via `include`. Each included file may in turn include its own
-# sub-stacks, so `docker compose up` from this directory brings up everything
-# that is currently uncommented.
-#
-# Project name applied to every included stack (container / network / volume
-# prefix). Keep it stable: renaming it orphans existing volumes.
-# ============================================================================
-name: colibri-services
+name: services
 
-# Each entry points at a nested compose file. Comment an entry out to leave
-# that whole stack out of the deployment.
 include:
-  # GATEWAY
-  # The only entry points: VPN (internal access) and HTTP (public apps). See
-  # ./gateway/compose.yaml.
   - path: ./gateway/compose.yaml
 
-  # MONITORING
-  # Netdata (metrics, databases, uptime, alerts) and Dozzle (logs). See
-  # ./monitoring/compose.yaml.
   - path: ./monitoring/compose.yaml
 
-  # MYSQL DATABASE
-  # Fans out to master / replica / backup / admin (see
-  # ./databases/mysql/compose.yaml for which of those are enabled).
   - path: ./databases/mysql/compose.yaml
 
-  # POSTGRES DATABASE
-  # Fans out to master / replica / backup / admin (see
-  # ./databases/postgres/compose.yaml for which of those are enabled).
   - path: ./databases/postgres/compose.yaml
 
-# Internal network shared by every service. Fixed subnet so VPN clients can
-# route to it (keep in sync with VPN_ALLOWED_IPS in gateway/.env.dev).
 networks:
   default:
+    name: services-internal-network
     ipam:
       config:
         - subnet: 172.30.0.0/16

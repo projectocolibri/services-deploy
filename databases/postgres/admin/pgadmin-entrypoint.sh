@@ -1,6 +1,4 @@
 #!/bin/sh
-# Builds pgAdmin's servers.json from ADMIN_HOSTS / ADMIN_HOSTS_LABELS
-# (comma separated, same order), then starts pgAdmin.
 
 field() {
     echo "$1" | cut -d, -f"$2"

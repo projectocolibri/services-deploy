@@ -1,6 +1,6 @@
 services:
   mysql-db:
-    image: percona/percona-server:8.0
+    image: percona/percona-server:8.4
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -10,17 +10,21 @@ services:
       REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
       MONITOR_USER: ${MYSQL_MONITOR_USER}
       MONITOR_PASSWORD: ${MYSQL_MONITOR_PASSWORD}
-    # server-id/log-bin/gtid: GTID replication
-    # mysql_clone: lets the replica clone this instance on its first start
+    entrypoint: ["/bin/bash", "/usr/local/bin/mysql-master-entrypoint.sh"]
     command:
-      - --server-id=${MASTER_SERVER_ID}
-      - --log-bin=${MYSQL_LOG_BIN}
-      - --binlog-format=${MYSQL_BINLOG_FORMAT}
+      - mysqld
+      - --log-bin=mysql-bin
       - --gtid-mode=ON
       - --enforce-gtid-consistency=ON
       - --plugin-load-add=mysql_clone.so
+      - --read-only=OFF
+    networks:
+      default:
+        aliases:
+          - mysql-primary
     volumes:
       - mysql-data:/var/lib/mysql
+      - ./mysql-master-entrypoint.sh:/usr/local/bin/mysql-master-entrypoint.sh:ro
       - ./init-master.sh:/docker-entrypoint-initdb.d/init-master.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\""]

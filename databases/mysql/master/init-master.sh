@@ -1,17 +1,12 @@
 #!/bin/bash
-# Runs once, when the data volume is initialized (sourced by the entrypoint,
-# which provides the "mysql" command array already logged in as root).
 
-# replication role: used by the replica to clone this instance (BACKUP_ADMIN)
-# and to stream the binary log (REPLICATION SLAVE)
 "${mysql[@]}" <<-EOSQL
     CREATE USER '${REPLICATION_USER}'@'%' IDENTIFIED BY '${REPLICATION_PASSWORD}';
     GRANT REPLICATION SLAVE, BACKUP_ADMIN ON *.* TO '${REPLICATION_USER}'@'%';
 EOSQL
 
-# monitoring user (Netdata): read-only access to server status and replication
-# state. Replicated to the replica with the rest of the users.
 "${mysql[@]}" <<-EOSQL
-    CREATE USER '${MONITOR_USER}'@'%' IDENTIFIED BY '${MONITOR_PASSWORD}' WITH MAX_USER_CONNECTIONS 5;
-    GRANT USAGE, PROCESS, REPLICATION CLIENT ON *.* TO '${MONITOR_USER}'@'%';
+    CREATE USER '${MONITOR_USER}'@'%' IDENTIFIED BY '${MONITOR_PASSWORD}' WITH MAX_USER_CONNECTIONS 10;
+    GRANT SELECT, PROCESS, REPLICATION CLIENT, RELOAD ON *.* TO '${MONITOR_USER}'@'%';
+    GRANT SELECT ON performance_schema.* TO '${MONITOR_USER}'@'%';
 EOSQL

@@ -1,28 +1,14 @@
-# ============================================================================
-# Monitoring stack aggregator.
-#
-# Included from the root ./compose.yaml. Every sub-stack gets the same two env
-# files, layered in order (later files win on duplicate keys):
-#   - ./.env.dev  development defaults
-#   - ./.env      local overrides / secrets
-#
-# Two tools, both internal (VPN only):
-#   - Netdata  metrics, databases, uptime checks and alerts
-#   - Dozzle   container logs with search
-# ============================================================================
 include:
-  # ======= Netdata =======
-  # Host + container CPU / memory / disk I/O / network, MySQL and PostgreSQL
-  # health, HTTP / TCP uptime checks and alerts (email + Slack).
-  # Web UI: http://netdata:19999
-  - path: ./netdata/compose.yaml
+  - path: ./pmm/compose.yaml
     env_file:
       - ./.env.dev
       - ./.env
 
-  # ======= Logs =======
-  # Dozzle: live logs of every container, searchable per container.
-  # Web UI: http://dozzle:8080
+  - path: ./client/compose.yaml
+    env_file:
+      - ./.env.dev
+      - ./.env
+
   - path: ./logs/compose.yaml
     env_file:
       - ./.env.dev

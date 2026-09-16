@@ -1,39 +1,14 @@
-# ============================================================================
-# MySQL stack aggregator.
-#
-# Included from the root ./compose.yaml. Every sub-stack below gets the same
-# two env files, layered in order (later files win on duplicate keys):
-#   - ./.env.dev  development defaults
-#   - ./.env      local overrides / secrets
-# Paths are relative to this file (databases/mysql/).
-#
-# Comment out any entry to leave that sub-stack out. No sub-stack has a
-# depends_on on another one: each service waits for what it needs by itself.
-# ============================================================================
 include:
-  # ======= Master Database =======
-  # Primary read/write Percona Server instance.
   - path: ./master/compose.yaml
     env_file:
       - ./.env.dev
       - ./.env
 
-  # ======= Replica Database =======
-  # GTID replica of the master (cloned with CLONE INSTANCE on first start).
   - path: ./replica/compose.yaml
     env_file:
       - ./.env.dev
       - ./.env
 
-  # ======= Backup =======
-  # Scheduled full + incremental XtraBackup against the master or replica.
-  - path: ./backup/compose.yaml
-    env_file:
-      - ./.env.dev
-      - ./.env
-
-  # ======= Admin =======
-  # phpMyAdmin web panel for the master and replica.
   - path: ./admin/compose.yaml
     env_file:
       - ./.env.dev

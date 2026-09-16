@@ -2,10 +2,13 @@ services:
   dozzle:
     image: amir20/dozzle:v11.0.1
     restart: always
+    command: ${DOZZLE_MODE:-}
     environment:
       DOZZLE_NO_ANALYTICS: "true"
-      DOZZLE_HOSTNAME: ${MONITOR_NODE_NAME}
-    # No published ports: reachable only through the VPN (http://dozzle:8080)
+      DOZZLE_REMOTE_AGENT: ${DOZZLE_REMOTE_AGENTS}
+    networks:
+      default:
+        aliases:
+          - dozzle-agent
     volumes:
-      # read-only: lists containers and streams their logs
       - /var/run/docker.sock:/var/run/docker.sock:ro

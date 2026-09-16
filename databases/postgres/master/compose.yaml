@@ -5,14 +5,11 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      # no POSTGRES_DB: only the built-in "postgres" database is created
       REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
       REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
       MONITOR_USER: ${POSTGRES_MONITOR_USER}
       MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD}
-    # wal_level/max_wal_senders: streaming replication
-    # summarize_wal: incremental backups (pg_basebackup --incremental)
-    # pg_stat_monitor: query analytics in PMM
+    entrypoint: ["/bin/bash", "/usr/local/bin/postgres-master-entrypoint.sh"]
     command:
       - postgres
       - -c
@@ -20,11 +17,16 @@ services:
       - -c
       - max_wal_senders=10
       - -c
-      - summarize_wal=on
+      - wal_keep_size=1GB
       - -c
       - shared_preload_libraries=pg_stat_monitor
+    networks:
+      default:
+        aliases:
+          - postgres-primary
     volumes:
       - postgres-data:/data/db
+      - ./postgres-master-entrypoint.sh:/usr/local/bin/postgres-master-entrypoint.sh:ro
       - ./init-master.sh:/docker-entrypoint-initdb.d/init-master.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d postgres"]

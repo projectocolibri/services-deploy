@@ -1,0 +1,26 @@
+services:
+  pmm-server:
+    image: percona/pmm-server:3
+    restart: always
+    environment:
+      PMM_ADMIN_PASSWORD: ${PMM_ADMIN_PASSWORD}
+      PMM_DATA_RETENTION: ${PMM_DATA_RETENTION:-720h}
+      PMM_ENABLE_UPDATES: "false"
+      PMM_ENABLE_TELEMETRY: "false"
+      GF_SMTP_ENABLED: ${ALERT_EMAIL_ENABLED:-false}
+      GF_SMTP_HOST: ${SMTP_HOST}:${SMTP_PORT:-587}
+      GF_SMTP_USER: ${SMTP_USER}
+      GF_SMTP_PASSWORD: ${SMTP_PASSWORD}
+      GF_SMTP_FROM_ADDRESS: ${SMTP_FROM}
+    volumes:
+      - pmm-data:/srv
+      - ./dashboards/Custom:/usr/share/percona-dashboards/panels/pmm-app/dist/dashboards/Custom:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sfk https://127.0.0.1:8443/v1/server/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+
+volumes:
+  pmm-data:
