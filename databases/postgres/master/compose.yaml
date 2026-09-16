@@ -1,15 +1,63 @@
+# ============================================================================
+# PostgreSQL primary (Percona Distribution for PostgreSQL 17)
+#
+# Purpose:       Read/write PostgreSQL server that applications connect to.
+# Role:          Source of streaming replication. The replica clones this
+#                instance with pg_basebackup on its first start and then
+#                streams its WAL. Reachable as postgres-primary.
+# Prerequisites: - Credentials from databases/postgres/.env.dev and .env
+#                - postgres-master-entrypoint.sh and init-master.sh next to
+#                  this file
+# Variables:     POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_REPLICATION_USER,
+#                POSTGRES_REPLICATION_PASSWORD, POSTGRES_MONITOR_USER,
+#                POSTGRES_MONITOR_PASSWORD.
+#                TZ from the root .env.dev.
+# ============================================================================
+
 services:
   postgres-db:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
     image: percona/percona-distribution-postgresql:17
     restart: always
+
+    # --------------------------------------------------------------------------
+    # Credentials
+    # --------------------------------------------------------------------------
+    # Read by the image entrypoint (POSTGRES_*) and by init-master.sh (the
+    # rest). Applied only when the data volume is empty (first start). No
+    # POSTGRES_DB: only the built-in "postgres" database is created.
     environment:
+      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # PostgreSQL's own timezone setting is fixed when the data directory is
+      # initialized; changing TZ later does not change it.
+      TZ: ${TZ:-Etc/UTC}
+      # POSTGRES_USER: superuser created at initialization.
       POSTGRES_USER: ${POSTGRES_USER}
+      # POSTGRES_PASSWORD: password of POSTGRES_USER. Required.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # REPLICATION_USER: replication role created by init-master.sh.
       REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
+      # REPLICATION_PASSWORD: password of REPLICATION_USER.
       REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      # MONITOR_USER: read-only PMM role created by init-master.sh.
       MONITOR_USER: ${POSTGRES_MONITOR_USER}
+      # MONITOR_PASSWORD: password of MONITOR_USER.
       MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD}
+
+    # --------------------------------------------------------------------------
+    # Startup
+    # --------------------------------------------------------------------------
+    # Wrapper around the image entrypoint: promotes the data if it was a
+    # replica (removes standby.signal).
     entrypoint: ["/bin/bash", "/usr/local/bin/postgres-master-entrypoint.sh"]
+    # Server settings (-c name=value):
+    #   wal_level=replica          write enough WAL for streaming replication
+    #   max_wal_senders=10         concurrent replication connections allowed
+    #   wal_keep_size=1GB          WAL kept for a replica that was briefly
+    #                              disconnected
+    #   shared_preload_libraries   load pg_stat_monitor for PMM Query Analytics
     command:
       - postgres
       - -c
@@ -20,14 +68,34 @@ services:
       - wal_keep_size=1GB
       - -c
       - shared_preload_libraries=pg_stat_monitor
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
+    # Applications and the replica connect to the role alias, not the service
+    # name, so the primary can be moved or replaced without changing clients.
     networks:
       default:
         aliases:
           - postgres-primary
+
+    # --------------------------------------------------------------------------
+    # Storage and scripts
+    # --------------------------------------------------------------------------
     volumes:
+      # Database files (the image's PGDATA is /data/db).
       - postgres-data:/data/db
+      # Custom entrypoint wrapper.
       - ./postgres-master-entrypoint.sh:/usr/local/bin/postgres-master-entrypoint.sh:ro
+      # Creates roles, the query analytics extension and the replication
+      # pg_hba rule on first initialization.
       - ./init-master.sh:/docker-entrypoint-initdb.d/init-master.sh:ro
+
+    # --------------------------------------------------------------------------
+    # Health check
+    # --------------------------------------------------------------------------
+    # Healthy once the server accepts connections. $$ escapes the variable
+    # from Compose so the container shell expands POSTGRES_USER.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d postgres"]
       interval: 10s
@@ -35,5 +103,9 @@ services:
       retries: 3
       start_period: 30s
 
+# ----------------------------------------------------------------------------
+# Volumes
+# ----------------------------------------------------------------------------
 volumes:
+  # Primary's data directory. Deleting it deletes every database.
   postgres-data:

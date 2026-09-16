@@ -1,17 +1,60 @@
-name: services
+# ============================================================================
+# Root Compose file
+#
+# Purpose:       Single entry point for the whole deployment. It defines no
+#                services of its own: it includes the gateway, monitoring and
+#                database stacks and declares the network they all share.
+# Role:          `docker compose up -d` from this directory starts every
+#                included stack as one Compose project.
+# Prerequisites: - Docker Engine with Docker Compose v2.24 or later (for
+#                  `include` with `env_file`)
+#                - COMPOSE_ENV_FILES=.env.dev,.env set in the shell, so the
+#                  global ./.env.dev and ./.env are loaded (see ./.env.dev)
+#                - An .env file (may be empty) at the root and in every stack
+#                  directory: gateway/, monitoring/, databases/mysql/,
+#                  databases/postgres/
+# Variables:     PROJECT_NAME, NETWORK_NAME, NETWORK_SUBNET (and TZ, used by
+#                every service) from ./.env.dev and ./.env. These global values
+#                reach every included stack. Each stack also loads its own
+#                .env.dev and .env (see the stack's compose.yaml).
+# ============================================================================
 
+# ----------------------------------------------------------------------------
+# Project name
+# ----------------------------------------------------------------------------
+# PROJECT_NAME: prefix for every container, volume and default resource name.
+name: ${PROJECT_NAME}
+
+# ----------------------------------------------------------------------------
+# Included stacks
+# ----------------------------------------------------------------------------
+# Each entry is a stack directory with its own compose.yaml. Remove or comment
+# out an entry to leave that stack out of the deployment. No stack depends on
+# another: services wait for their dependencies by themselves.
 include:
+  # Gateway: WireGuard VPN (private access) and nginx (public web apps).
   - path: ./gateway/compose.yaml
 
+  # Monitoring: PMM Server, PMM client with cAdvisor, and Dozzle for logs.
   - path: ./monitoring/compose.yaml
 
+  # MySQL: Percona Server primary, read-only replica and phpMyAdmin.
   - path: ./databases/mysql/compose.yaml
 
+  # PostgreSQL: Percona Distribution primary, read-only replica and pgAdmin.
   - path: ./databases/postgres/compose.yaml
 
+# ----------------------------------------------------------------------------
+# Shared internal network
+# ----------------------------------------------------------------------------
+# Every service joins `default`, so containers reach each other by service
+# name and by network alias (mysql-primary, postgres-replica, ...).
 networks:
   default:
-    name: services-internal-network
+    # NETWORK_NAME: fixed network name (not prefixed with the project name).
+    name: ${NETWORK_NAME}
     ipam:
       config:
-        - subnet: 172.30.0.0/16
+        # NETWORK_SUBNET: fixed subnet, routed through the VPN by clients
+        # (VPN_ALLOWED_IPS in gateway/.env.dev is built from it).
+        - subnet: ${NETWORK_SUBNET}

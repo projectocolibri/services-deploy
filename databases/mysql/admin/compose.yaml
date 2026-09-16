@@ -1,8 +1,35 @@
+# ============================================================================
+# MySQL admin panel (phpMyAdmin)
+#
+# Purpose:       Web UI to browse and manage the MySQL primary and replica.
+# Role:          Internal tool, reachable only through the VPN at
+#                http://mysql-admin (no published ports). Users log in with
+#                MySQL credentials.
+# Prerequisites: - VPN connection
+#                - The MySQL servers listed in ADMIN_HOSTS running
+# Variables:     ADMIN_HOSTS, ADMIN_HOSTS_LABELS, ADMIN_UPLOAD_LIMIT.
+#                TZ from the root .env.dev.
+# ============================================================================
+
 services:
   mysql-admin:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    # No depends_on on the databases: sub-stacks can be removed from
+    # ../compose.yaml, and depending on an undefined service is an error.
     image: phpmyadmin:5.2
     restart: always
+
+    # --------------------------------------------------------------------------
+    # Server list and limits
+    # --------------------------------------------------------------------------
     environment:
+      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      TZ: ${TZ:-Etc/UTC}
+      # PMA_HOSTS: servers offered on the login screen (comma separated).
       PMA_HOSTS: ${ADMIN_HOSTS}
+      # PMA_VERBOSES: display names for PMA_HOSTS, same order (comma separated).
       PMA_VERBOSES: ${ADMIN_HOSTS_LABELS}
+      # UPLOAD_LIMIT: maximum import file size. Default: 64M.
       UPLOAD_LIMIT: ${ADMIN_UPLOAD_LIMIT:-64M}

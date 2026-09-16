@@ -1,15 +1,48 @@
+# ============================================================================
+# PostgreSQL stack
+#
+# Purpose:       Groups the PostgreSQL (Percona Distribution) services.
+# Role:          - master:  read/write primary, alias postgres-primary
+#                - replica: read-only hot standby, alias postgres-replica
+#                - admin:   pgAdmin web panel, reached through the VPN
+#                The primary and replica are separate services with separate
+#                volumes; the replica clones the primary on its first start
+#                and then streams its WAL.
+# Prerequisites: - databases/postgres/.env must exist (may be empty)
+#                - Production passwords set in databases/postgres/.env
+# Variables:     Loaded from the env files below. See
+#                databases/postgres/.env.dev for the meaning and defaults of
+#                each variable.
+# ============================================================================
+
 include:
+  # --------------------------------------------------------------------------
+  # Primary (read/write)
+  # --------------------------------------------------------------------------
+  # Env files are layered in order; a key in ./.env overrides ./.env.dev.
   - path: ./master/compose.yaml
     env_file:
+      # Committed development defaults.
       - ./.env.dev
+      # Local, uncommitted overrides and secrets.
       - ./.env
 
+  # --------------------------------------------------------------------------
+  # Replica (read-only hot standby)
+  # --------------------------------------------------------------------------
   - path: ./replica/compose.yaml
     env_file:
+      # Committed development defaults.
       - ./.env.dev
+      # Local, uncommitted overrides and secrets.
       - ./.env
 
+  # --------------------------------------------------------------------------
+  # Admin panel (pgAdmin)
+  # --------------------------------------------------------------------------
   - path: ./admin/compose.yaml
     env_file:
+      # Committed development defaults.
       - ./.env.dev
+      # Local, uncommitted overrides and secrets.
       - ./.env

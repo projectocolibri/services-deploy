@@ -1,10 +1,51 @@
+# ============================================================================
+# HTTP gateway (nginx)
+#
+# Purpose:       Reverse proxy that publishes internal web apps to the
+#                internet over HTTPS.
+# Role:          Public entry point for web traffic. TLS ends here; requests
+#                are forwarded over plain HTTP to app containers on the
+#                internal network. Hosts without a config are refused.
+# Prerequisites: - TCP ports HTTP_PORT and HTTPS_PORT open in the firewall
+#                - One conf.d/<app>.conf per app (see app.conf.example)
+#                - Certificates in certs/<domain>/fullchain.pem and privkey.pem
+# Variables:     HTTP_PORT, HTTPS_PORT from gateway/.env.dev and gateway/.env.
+#                TZ from the root .env.dev.
+# ============================================================================
+
 services:
   http:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
     image: nginx:1.28-alpine
     restart: always
+
+    # --------------------------------------------------------------------------
+    # Time zone
+    # --------------------------------------------------------------------------
+    environment:
+      # TZ: time zone of access and error log timestamps, from the root
+      # .env.dev. Default: Etc/UTC.
+      TZ: ${TZ:-Etc/UTC}
+
+    # --------------------------------------------------------------------------
+    # Published ports
+    # --------------------------------------------------------------------------
     ports:
+      # HTTP_PORT: host port for plain HTTP (redirects to HTTPS). Default: 80.
       - "${HTTP_PORT:-80}:80"
+      # HTTPS_PORT: host port for HTTPS. Default: 443.
       - "${HTTPS_PORT:-443}:443"
+
+    # --------------------------------------------------------------------------
+    # Configuration and certificates (read-only)
+    # --------------------------------------------------------------------------
     volumes:
+      # Site configs: default.conf plus one <app>.conf per app. Only *.conf
+      # files are loaded. Reload after changes:
+      #   docker compose exec http nginx -s reload
       - ./conf.d:/etc/nginx/conf.d:ro
+      # TLS certificates: certs/<domain>/fullchain.pem and privkey.pem
+      # (not committed).
       - ./certs:/etc/nginx/certs:ro

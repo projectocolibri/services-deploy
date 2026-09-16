@@ -1,21 +1,73 @@
+# ============================================================================
+# VPN gateway (WireGuard)
+#
+# Purpose:       Runs a WireGuard server that gives administrators private
+#                access to the internal Docker network.
+# Role:          The only way to reach internal services (databases, admin
+#                panels, PMM, Dozzle). Clients resolve Docker service names
+#                through the DNS server built into the container.
+# Prerequisites: - Linux host with the WireGuard kernel module (kernel 5.6+)
+#                - UDP port VPN_PORT open in the firewall
+#                - VPN_HOST set to this server's public IP or domain
+# Variables:     VPN_HOST, VPN_PORT, VPN_PEERS, VPN_SUBNET, VPN_ALLOWED_IPS and
+#                from gateway/.env.dev and gateway/.env; TZ from the root
+#                .env.dev.
+# ============================================================================
+
 services:
   vpn:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    # linuxserver.io WireGuard image, pinned to an exact release.
     image: lscr.io/linuxserver/wireguard:1.0.20260223-r0-ls122
     restart: always
+
+    # --------------------------------------------------------------------------
+    # Kernel permissions
+    # --------------------------------------------------------------------------
+    # NET_ADMIN: create the wg0 interface and manage iptables rules.
     cap_add:
       - NET_ADMIN
+    # src_valid_mark: needed by wg-quick's policy routing (fwmark).
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
+
+    # --------------------------------------------------------------------------
+    # WireGuard configuration
+    # --------------------------------------------------------------------------
     environment:
+      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
+      # SERVERURL: endpoint written into client configs (public IP or domain).
+      # No default: must be set in gateway/.env.dev or gateway/.env.
       SERVERURL: ${VPN_HOST}
+      # SERVERPORT: port written into client configs. Default: 51820.
       SERVERPORT: ${VPN_PORT:-51820}
+      # PEERS: comma-separated client names (or a count) to generate configs for.
       PEERS: ${VPN_PEERS}
+      # INTERNAL_SUBNET: tunnel address range; server is .1. Default: 10.13.13.0.
       INTERNAL_SUBNET: ${VPN_SUBNET:-10.13.13.0}
+      # ALLOWEDIPS: comma-separated CIDRs routed through the tunnel by clients.
       ALLOWEDIPS: ${VPN_ALLOWED_IPS}
+      # PEERDNS: "auto" runs CoreDNS in the container (see config/coredns) and
+      # points clients at it, so they resolve Docker service names.
       PEERDNS: auto
+      # LOG_CONFS: "false" keeps client configs and QR codes out of the logs.
       LOG_CONFS: "false"
+
+    # --------------------------------------------------------------------------
+    # Published ports
+    # --------------------------------------------------------------------------
+    # Host UDP port VPN_PORT (default 51820) to WireGuard's port in the container.
     ports:
       - "${VPN_PORT:-51820}:51820/udp"
+
+    # --------------------------------------------------------------------------
+    # Persistent state
+    # --------------------------------------------------------------------------
+    # ./config holds server keys, generated client configs
+    # (peer_<name>/peer_<name>.conf and .png QR code), the config templates and
+    # the CoreDNS config. Generated files are secrets and are not committed.
     volumes:
       - ./config:/config

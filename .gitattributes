@@ -1,1 +1,21 @@
+# ============================================================================
+# Git attributes
+#
+# Purpose:       Controls how Git normalizes line endings for every file in the
+#                repository.
+# Role:          Every script, env file and config in this repository is
+#                bind-mounted into Linux containers. Windows-style CRLF line
+#                endings break shell scripts ("bad interpreter") and add a
+#                trailing \r to env values, so all files are forced to LF.
+# Prerequisites: None. Applies automatically on checkout. After changing this
+#                file on an existing clone, run `git add --renormalize .` to
+#                re-apply it to files already checked out.
+# Variables:     None.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Line ending normalization
+# ----------------------------------------------------------------------------
+# text=auto  let Git detect text files (binary files are left untouched)
+# eol=lf     always check text files out with LF, even on Windows
 * text=auto eol=lf

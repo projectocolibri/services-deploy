@@ -1,6 +1,26 @@
+# ============================================================================
+# CoreDNS configuration for VPN clients
+#
+# Purpose:       DNS server that VPN clients use while connected.
+# Role:          Started inside the vpn container when PEERDNS=auto. It
+#                forwards every query to the container's resolver, which is
+#                Docker's embedded DNS, so clients can resolve internal service
+#                names (mysql-primary, pmm-server, ...) as well as public names.
+# Prerequisites: PEERDNS=auto in gateway/vpn/compose.yaml.
+# Variables:     None.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Root zone: handles queries for every domain
+# ----------------------------------------------------------------------------
 . {
+    # Stop if a forwarding loop back to this server is detected.
     loop
+    # Log query errors to the container output.
     errors
+    # Health endpoint on :8080/health for the image's checks.
     health
+    # Send every query to the resolvers listed in the container's resolv.conf
+    # (Docker's embedded DNS at 127.0.0.11).
     forward . /etc/resolv.conf
 }

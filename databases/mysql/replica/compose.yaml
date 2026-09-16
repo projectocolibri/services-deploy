@@ -1,13 +1,65 @@
+# ============================================================================
+# MySQL replica (Percona Server 8.4)
+#
+# Purpose:       Read-only copy of the MySQL primary for reporting and read
+#                queries.
+# Role:          On its first start it clones the primary (data and users),
+#                then follows it with GTID replication under super_read_only.
+#                Reachable as mysql-replica. Not a backup: it runs on the same
+#                server and replays every change within seconds.
+# Prerequisites: - The primary reachable at PRIMARY_HOST with the replication
+#                  account created (init-master.sh)
+#                - Same root password as the primary
+#                - An empty volume for the first clone
+# Variables:     MYSQL_ROOT_PASSWORD, REPLICA_PRIMARY_HOST,
+#                MYSQL_REPLICATION_USER, MYSQL_REPLICATION_PASSWORD.
+#                TZ from the root .env.dev.
+# ============================================================================
+
 services:
   mysql-replica-db:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    # restart: always is also how the replica comes back up after the clone,
+    # which shuts the server down on purpose.
     image: percona/percona-server:8.4
     restart: always
+
+    # --------------------------------------------------------------------------
+    # Replication settings
+    # --------------------------------------------------------------------------
+    # No depends_on on the primary: the entrypoint waits for it by itself.
     environment:
+      # TZ: container and MySQL system time zone, from the root .env.dev.
+      # Default: Etc/UTC.
+      TZ: ${TZ:-Etc/UTC}
+      # MYSQL_ROOT_PASSWORD: root password. Must equal the primary's, because
+      # the clone replaces this instance's users with the primary's.
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      # PRIMARY_HOST: host to clone and follow. Default: mysql-primary.
       PRIMARY_HOST: ${REPLICA_PRIMARY_HOST:-mysql-primary}
+      # REPLICATION_USER: account on the primary used to clone and replicate.
       REPLICATION_USER: ${MYSQL_REPLICATION_USER}
+      # REPLICATION_PASSWORD: password of REPLICATION_USER.
       REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
+
+    # --------------------------------------------------------------------------
+    # Startup
+    # --------------------------------------------------------------------------
+    # Wrapper around the image entrypoint: clones the primary, configures
+    # replication and enables super_read_only.
     entrypoint: ["/bin/bash", "/usr/local/bin/mysql-replica-entrypoint.sh"]
+    # mysqld options:
+    #   --log-bin, --gtid-mode, ... same as the primary, so this server can be
+    #                               promoted to primary
+    #   --plugin-load-add           clone plugin, needed to receive the clone
+    #   --read-only=ON              normal users cannot write (the entrypoint
+    #                               adds super_read_only, which blocks root)
+    #   --relay-log                 fixed relay log name; the container
+    #                               hostname changes on every recreate
+    #   --relay-log-recovery        discard unprocessed relay logs after a
+    #                               crash and fetch them again from the primary
     command:
       - mysqld
       - --log-bin=mysql-bin
@@ -17,13 +69,30 @@ services:
       - --read-only=ON
       - --relay-log=mysql-replica-relay-bin
       - --relay-log-recovery=ON
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
+    # Clients use the role alias for read-only connections.
     networks:
       default:
         aliases:
           - mysql-replica
+
+    # --------------------------------------------------------------------------
+    # Storage and scripts
+    # --------------------------------------------------------------------------
     volumes:
+      # Replica's own data directory. Delete it to force a fresh clone.
       - mysql-replica-data:/var/lib/mysql
+      # Custom entrypoint wrapper.
       - ./mysql-replica-entrypoint.sh:/usr/local/bin/mysql-replica-entrypoint.sh:ro
+
+    # --------------------------------------------------------------------------
+    # Health check
+    # --------------------------------------------------------------------------
+    # Healthy once mysqld answers a ping as root ($$ defers expansion to the
+    # container shell).
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\""]
       interval: 10s
@@ -31,5 +100,9 @@ services:
       retries: 3
       start_period: 30s
 
+# ----------------------------------------------------------------------------
+# Volumes
+# ----------------------------------------------------------------------------
 volumes:
+  # Replica's data directory, separate from the primary's.
   mysql-replica-data:

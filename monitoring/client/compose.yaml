@@ -1,40 +1,137 @@
+# ============================================================================
+# PMM client and cAdvisor
+#
+# Purpose:       Collects metrics on this server and registers them in PMM
+#                Server.
+# Role:          - pmm-client: registers the server as a PMM node named after
+#                  its hostname (CPU, memory, disk, load), this server's
+#                  cAdvisor and, when MONITOR_DATABASES=true, the databases.
+#                - cadvisor: CPU, memory, network and disk I/O per container.
+# Prerequisites: - PMM Server reachable at MONITOR_SERVER_ADDRESS
+#                - Linux host (cAdvisor mounts /sys, /var/lib/docker, /dev/kmsg)
+#                - Monitoring accounts created on the database primaries
+# Variables:     MONITOR_SERVER_ADDRESS, PMM_ADMIN_PASSWORD, MONITOR_DATABASES,
+#                MONITOR_MYSQL_USER, MONITOR_MYSQL_PASSWORD,
+#                MONITOR_POSTGRES_USER, MONITOR_POSTGRES_PASSWORD.
+#                TZ from the root .env.dev.
+# ============================================================================
+
 services:
   pmm-client:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    # No depends_on: PMM Server and the databases live in other stacks. If PMM
+    # Server is not up yet, setup fails and the restart policy retries it.
     image: percona/pmm-client:3
     restart: always
+
+    # --------------------------------------------------------------------------
+    # PMM agent settings
+    # --------------------------------------------------------------------------
     environment:
+      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # The image has no time zone data, so it stays on UTC.
+      TZ: ${TZ:-Etc/UTC}
+      # PMM_AGENT_SERVER_ADDRESS: PMM Server host:port.
       PMM_AGENT_SERVER_ADDRESS: ${MONITOR_SERVER_ADDRESS}
+      # PMM_AGENT_SERVER_USERNAME: PMM user the agent registers as.
       PMM_AGENT_SERVER_USERNAME: admin
+      # PMM_AGENT_SERVER_PASSWORD: password of that user.
       PMM_AGENT_SERVER_PASSWORD: ${PMM_ADMIN_PASSWORD}
+      # PMM_AGENT_SERVER_INSECURE_TLS: 1 accepts PMM Server's self-signed certificate.
       PMM_AGENT_SERVER_INSECURE_TLS: 1
+      # PMM_AGENT_CONFIG_FILE: agent config path, relative to the PMM install
+      # directory. Not persisted: the agent is set up again on every start.
       PMM_AGENT_CONFIG_FILE: config/pmm-agent.yaml
+      # PMM_AGENT_SETUP: 1 registers the node with PMM Server on start.
       PMM_AGENT_SETUP: 1
+      # PMM_AGENT_SETUP_FORCE: 1 replaces an existing node with the same name.
       PMM_AGENT_SETUP_FORCE: 1
+      # PMM_AGENT_PRERUN_SCRIPT: runs alongside the agent; registers this
+      # server's services once the agent is connected.
       PMM_AGENT_PRERUN_SCRIPT: bash /usr/local/bin/pmm-client-register.sh
+
+      # --- Database registration (read by pmm-client-register.sh) -----------
+      # MONITOR_DATABASES: "true" registers the databases. Default: true.
       MONITOR_DATABASES: ${MONITOR_DATABASES:-true}
+      # MONITOR_MYSQL_USER: MySQL monitoring account.
       MONITOR_MYSQL_USER: ${MONITOR_MYSQL_USER}
+      # MONITOR_MYSQL_PASSWORD: password of MONITOR_MYSQL_USER.
       MONITOR_MYSQL_PASSWORD: ${MONITOR_MYSQL_PASSWORD}
+      # MONITOR_POSTGRES_USER: PostgreSQL monitoring role.
       MONITOR_POSTGRES_USER: ${MONITOR_POSTGRES_USER}
+      # MONITOR_POSTGRES_PASSWORD: password of MONITOR_POSTGRES_USER.
       MONITOR_POSTGRES_PASSWORD: ${MONITOR_POSTGRES_PASSWORD}
+
+    # --------------------------------------------------------------------------
+    # Startup
+    # --------------------------------------------------------------------------
+    # Sets the node name from the host's hostname, then starts pmm-agent.
     entrypoint: ["/bin/bash", "/usr/local/bin/pmm-client-entrypoint.sh"]
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
+    # Shares cAdvisor's network namespace: reaches it on localhost:8080, and
+    # each server's client and cAdvisor stay paired without per-server names.
     network_mode: service:cadvisor
+
+    # --------------------------------------------------------------------------
+    # Host information and scripts
+    # --------------------------------------------------------------------------
     volumes:
+      # Host's hostname, used as the PMM node name.
       - /etc/hostname:/host/etc/hostname:ro
+      # Entrypoint wrapper.
       - ./pmm-client-entrypoint.sh:/usr/local/bin/pmm-client-entrypoint.sh:ro
+      # Service registration script.
       - ./pmm-client-register.sh:/usr/local/bin/pmm-client-register.sh:ro
 
   cadvisor:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
     image: gcr.io/cadvisor/cadvisor:v0.52.1
     restart: always
+
+    # --------------------------------------------------------------------------
+    # Host access
+    # --------------------------------------------------------------------------
+    # Privileged with the kernel log device, to read cgroup and OOM data.
     privileged: true
     devices:
       - /dev/kmsg
+
+    # --------------------------------------------------------------------------
+    # Time zone
+    # --------------------------------------------------------------------------
+    environment:
+      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # The image has no time zone data, so it stays on UTC.
+      TZ: ${TZ:-Etc/UTC}
+
+    # --------------------------------------------------------------------------
+    # Collection settings
+    # --------------------------------------------------------------------------
+    #   --docker_only                   containers only, not every host cgroup
+    #   --housekeeping_interval         how often stats are collected
+    #   --store_container_labels=false  do not turn every Docker label into a
+    #                                   metric label
+    #   --whitelisted_container_labels  keep only the Compose project and
+    #                                   service labels, to tell containers apart
+    #   --disable_metrics               skip expensive or unused metric groups
     command:
       - --docker_only=true
       - --housekeeping_interval=30s
       - --store_container_labels=false
       - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
       - --disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
+
+    # --------------------------------------------------------------------------
+    # Host filesystems (read-only)
+    # --------------------------------------------------------------------------
+    # No published ports: PMM scrapes it through pmm-client (localhost:8080).
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro

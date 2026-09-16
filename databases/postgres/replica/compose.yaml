@@ -1,12 +1,56 @@
+# ============================================================================
+# PostgreSQL replica (Percona Distribution for PostgreSQL 17)
+#
+# Purpose:       Read-only hot standby of the PostgreSQL primary for reporting
+#                and read queries.
+# Role:          On its first start it clones the primary with pg_basebackup,
+#                then streams the primary's WAL continuously. Reachable as
+#                postgres-replica. Not a backup: it runs on the same server
+#                and replays every change within seconds.
+# Prerequisites: - The primary reachable at PRIMARY_HOST with the replication
+#                  role and pg_hba rule created (init-master.sh)
+#                - An empty volume for the first clone
+# Variables:     REPLICA_PRIMARY_HOST, POSTGRES_REPLICATION_USER,
+#                POSTGRES_REPLICATION_PASSWORD.
+#                TZ from the root .env.dev.
+# ============================================================================
+
 services:
   postgres-replica-db:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
     image: percona/percona-distribution-postgresql:17
     restart: always
+
+    # --------------------------------------------------------------------------
+    # Replication settings
+    # --------------------------------------------------------------------------
+    # No depends_on on the primary: the entrypoint waits for it by itself.
+    # No POSTGRES_USER / POSTGRES_PASSWORD: the data is cloned from the
+    # primary (same roles), so initdb never runs here.
     environment:
+      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # PostgreSQL's own timezone setting is cloned from the primary.
+      TZ: ${TZ:-Etc/UTC}
+      # PRIMARY_HOST: host to clone and stream from. Default: postgres-primary.
       PRIMARY_HOST: ${REPLICA_PRIMARY_HOST:-postgres-primary}
+      # REPLICATION_USER: replication role on the primary.
       REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
+      # REPLICATION_PASSWORD: password of REPLICATION_USER.
       REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+
+    # --------------------------------------------------------------------------
+    # Startup
+    # --------------------------------------------------------------------------
+    # Wrapper around the image entrypoint: clones the primary on first start.
     entrypoint: ["/bin/bash", "/usr/local/bin/postgres-replica-entrypoint.sh"]
+    # Server settings (-c name=value):
+    #   hot_standby=on             accept read-only queries during recovery
+    #   wal_keep_size=1GB          same as the primary, so this server can be
+    #                              promoted to primary
+    #   shared_preload_libraries   pg_stat_monitor, required because the
+    #                              extension exists in the cloned databases
     command:
       - postgres
       - -c
@@ -15,13 +59,29 @@ services:
       - wal_keep_size=1GB
       - -c
       - shared_preload_libraries=pg_stat_monitor
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
+    # Clients use the role alias for read-only connections.
     networks:
       default:
         aliases:
           - postgres-replica
+
+    # --------------------------------------------------------------------------
+    # Storage and scripts
+    # --------------------------------------------------------------------------
     volumes:
+      # Replica's own data directory (PGDATA). Delete it to force a fresh clone.
       - postgres-replica-data:/data/db
+      # Custom entrypoint wrapper.
       - ./postgres-replica-entrypoint.sh:/usr/local/bin/postgres-replica-entrypoint.sh:ro
+
+    # --------------------------------------------------------------------------
+    # Health check
+    # --------------------------------------------------------------------------
+    # Healthy once the standby accepts connections.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -29,5 +89,9 @@ services:
       retries: 3
       start_period: 30s
 
+# ----------------------------------------------------------------------------
+# Volumes
+# ----------------------------------------------------------------------------
 volumes:
+  # Replica's data directory, separate from the primary's.
   postgres-replica-data:

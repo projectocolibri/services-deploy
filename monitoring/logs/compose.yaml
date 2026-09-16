@@ -1,14 +1,55 @@
+# ============================================================================
+# Container logs (Dozzle)
+#
+# Purpose:       Web UI that streams the live logs of every container.
+# Role:          Reads logs directly from the Docker socket; nothing is stored.
+#                One server runs the web UI (reachable only through the VPN at
+#                http://dozzle:8080); other servers can run it as an agent that
+#                streams their logs to that UI.
+# Prerequisites: - Docker socket on the host at /var/run/docker.sock
+#                - Docker log rotation configured on the host, since Dozzle
+#                  shows what Docker keeps
+# Variables:     DOZZLE_MODE, DOZZLE_REMOTE_AGENTS.
+#                TZ from the root .env.dev.
+# ============================================================================
+
 services:
   dozzle:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
     image: amir20/dozzle:v11.0.1
     restart: always
+
+    # --------------------------------------------------------------------------
+    # Mode and settings
+    # --------------------------------------------------------------------------
+    # DOZZLE_MODE: empty runs the web UI on port 8080; "agent" runs an agent on
+    # port 7007. Default: empty.
     command: ${DOZZLE_MODE:-}
     environment:
+      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # The UI shows times in the browser's time zone.
+      TZ: ${TZ:-Etc/UTC}
+      # DOZZLE_NO_ANALYTICS: "true" disables anonymous usage reporting.
       DOZZLE_NO_ANALYTICS: "true"
+      # DOZZLE_REMOTE_AGENT: agents shown in this UI (comma-separated
+      # host:port). Empty: this server only.
       DOZZLE_REMOTE_AGENT: ${DOZZLE_REMOTE_AGENTS}
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
+    # dozzle-agent: name a UI lists in DOZZLE_REMOTE_AGENTS (dozzle-agent:7007)
+    # when this instance runs as an agent. No published ports: VPN only.
     networks:
       default:
         aliases:
           - dozzle-agent
+
+    # --------------------------------------------------------------------------
+    # Docker access
+    # --------------------------------------------------------------------------
+    # Read-only Docker socket: lists containers and streams their logs.
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro

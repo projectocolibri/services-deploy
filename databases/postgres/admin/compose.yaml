@@ -1,19 +1,69 @@
+# ============================================================================
+# PostgreSQL admin panel (pgAdmin 4)
+#
+# Purpose:       Web UI to browse and manage the PostgreSQL primary and
+#                replica.
+# Role:          Internal tool, reachable only through the VPN at
+#                http://postgres-admin (no published ports). The server list
+#                is rebuilt from ADMIN_HOSTS on every start.
+# Prerequisites: - VPN connection
+#                - pgadmin-entrypoint.sh next to this file
+# Variables:     ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_HOSTS, ADMIN_HOSTS_LABELS,
+#                ADMIN_HOSTS_USER.
+#                TZ from the root .env.dev.
+# ============================================================================
+
 services:
   postgres-admin:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    # No depends_on on the databases: sub-stacks can be removed from
+    # ../compose.yaml, and depending on an undefined service is an error.
     image: dpage/pgadmin4:9
     restart: always
+
+    # --------------------------------------------------------------------------
+    # Login and server list
+    # --------------------------------------------------------------------------
     environment:
+      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      TZ: ${TZ:-Etc/UTC}
+      # PGADMIN_DEFAULT_EMAIL: initial administrator login (first start only).
       PGADMIN_DEFAULT_EMAIL: ${ADMIN_EMAIL}
+      # PGADMIN_DEFAULT_PASSWORD: initial administrator password (first start only).
       PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD}
+      # ADMIN_HOSTS: servers to register (comma separated), read by the entrypoint.
       ADMIN_HOSTS: ${ADMIN_HOSTS}
+      # ADMIN_HOSTS_LABELS: display names for ADMIN_HOSTS, same order.
       ADMIN_HOSTS_LABELS: ${ADMIN_HOSTS_LABELS}
+      # ADMIN_HOSTS_USER: role name pre-filled for every registered server.
       ADMIN_HOSTS_USER: ${ADMIN_HOSTS_USER}
+      # PGADMIN_SERVER_JSON_FILE: where the entrypoint writes the server list
+      # and where pgAdmin imports it from.
       PGADMIN_SERVER_JSON_FILE: /tmp/servers.json
+      # PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True" replaces the stored server
+      # list with the file on every start, so ADMIN_HOSTS changes apply.
       PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+
+    # --------------------------------------------------------------------------
+    # Startup
+    # --------------------------------------------------------------------------
+    # Builds servers.json from ADMIN_HOSTS, then runs the image entrypoint.
     entrypoint: ["/bin/sh", "/usr/local/bin/pgadmin-entrypoint.sh"]
+
+    # --------------------------------------------------------------------------
+    # Storage and scripts
+    # --------------------------------------------------------------------------
     volumes:
+      # pgAdmin's settings database (users, preferences, saved passwords).
       - pgadmin-data:/var/lib/pgadmin
+      # Custom entrypoint wrapper.
       - ./pgadmin-entrypoint.sh:/usr/local/bin/pgadmin-entrypoint.sh:ro
 
+# ----------------------------------------------------------------------------
+# Volumes
+# ----------------------------------------------------------------------------
 volumes:
+  # pgAdmin data. Delete it to re-apply ADMIN_EMAIL and ADMIN_PASSWORD.
   pgadmin-data:

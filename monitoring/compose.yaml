@@ -1,15 +1,48 @@
+# ============================================================================
+# Monitoring stack
+#
+# Purpose:       Groups the monitoring and logging services.
+# Role:          - pmm:    PMM Server: dashboards, metrics storage, Query
+#                          Analytics and alerting
+#                - client: PMM client and cAdvisor: registers this server,
+#                          its containers and the databases in PMM
+#                - logs:   Dozzle: live logs of every container
+#                All internal, reachable only through the VPN.
+# Prerequisites: - monitoring/.env must exist (may be empty)
+#                - PMM_ADMIN_PASSWORD and the MONITOR_* credentials set in
+#                  monitoring/.env for production
+# Variables:     Loaded from the env files below. See monitoring/.env.dev for
+#                the meaning and defaults of each variable.
+# ============================================================================
+
 include:
+  # --------------------------------------------------------------------------
+  # PMM Server
+  # --------------------------------------------------------------------------
+  # Env files are layered in order; a key in ./.env overrides ./.env.dev.
   - path: ./pmm/compose.yaml
     env_file:
+      # Committed development defaults.
       - ./.env.dev
+      # Local, uncommitted overrides and secrets.
       - ./.env
 
+  # --------------------------------------------------------------------------
+  # PMM client and cAdvisor
+  # --------------------------------------------------------------------------
   - path: ./client/compose.yaml
     env_file:
+      # Committed development defaults.
       - ./.env.dev
+      # Local, uncommitted overrides and secrets.
       - ./.env
 
+  # --------------------------------------------------------------------------
+  # Container logs (Dozzle)
+  # --------------------------------------------------------------------------
   - path: ./logs/compose.yaml
     env_file:
+      # Committed development defaults.
       - ./.env.dev
+      # Local, uncommitted overrides and secrets.
       - ./.env

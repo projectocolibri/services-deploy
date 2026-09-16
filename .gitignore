@@ -1,16 +1,57 @@
+# ============================================================================
+# Git ignore rules
+#
+# Purpose:       Keeps secrets, generated keys, local overrides and editor
+#                files out of version control.
+# Role:          Every stack commits its development defaults (.env.dev) and
+#                keeps real values in an uncommitted .env. VPN keys, client
+#                configs and TLS certificates are generated or installed on the
+#                server and must never be committed.
+# Prerequisites: None.
+# Variables:     None.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Local environment overrides and secrets
+# ----------------------------------------------------------------------------
+# Per-stack .env files hold production passwords and host-specific values.
+# Compose expects them to exist (they may be empty).
 .env
 
+# ----------------------------------------------------------------------------
+# Database backup output
+# ----------------------------------------------------------------------------
+# Dump files written by a backup job under each database stack.
 databases/*/backup/backups/
 
+# ----------------------------------------------------------------------------
+# VPN gateway state (WireGuard)
+# ----------------------------------------------------------------------------
+# Server keys, peer keys and generated client configs are secrets created at
+# runtime. Only the shared templates and the CoreDNS config are committed.
 gateway/vpn/config/*
 !gateway/vpn/config/templates/
 !gateway/vpn/config/coredns/
+
+# ----------------------------------------------------------------------------
+# HTTP gateway certificates
+# ----------------------------------------------------------------------------
+# TLS certificates and private keys are installed per server. The .gitkeep
+# placeholder keeps the (otherwise empty) directory in the repository.
 gateway/http/certs/*
 !gateway/http/certs/.gitkeep
 
+# ----------------------------------------------------------------------------
+# Machine-specific Compose overrides
+# ----------------------------------------------------------------------------
+# Loaded automatically by `docker compose`; used locally to publish internal
+# tools on 127.0.0.1. Never deployed.
 compose.override.yaml
 compose.override.yml
 
+# ----------------------------------------------------------------------------
+# Operating system and editor files
+# ----------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
 desktop.ini

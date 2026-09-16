@@ -4,10 +4,10 @@ Docker Compose deployment of shared infrastructure: MySQL (Percona Server) and
 PostgreSQL (Percona Distribution), each with a read-only replica, a VPN and an
 HTTP gateway, and monitoring (PMM and Dozzle).
 
-Everything runs on **one server**, as one Compose project (`services`) brought
-up by a single `docker compose up -d`. The only ports open to the outside are
-the VPN and the HTTP gateway; every other service is internal and reached
-through the VPN.
+Everything runs on **one server**, as one Compose project (`PROJECT_NAME`,
+default `services`) brought up by a single `docker compose up -d`. The only
+ports open to the outside are the VPN and the HTTP gateway; every other service
+is internal and reached through the VPN.
 
 ```
                            Internet
@@ -19,7 +19,7 @@ through the VPN.
             │ WireGuard │           │   nginx   │
             └─────┬─────┘           └─────┬─────┘
                   │ admins                │ public apps
- ─────────────────┴──── internal network 172.30.0.0/16 ─┴──────────────────
+ ─────────────────┴──── internal network (NETWORK_SUBNET) ─┴──────────────────
   mysql-primary     ── replication ────►  mysql-replica     (read only)
   postgres-primary  ── streaming ──────►  postgres-replica  (read only)
   PMM, Dozzle, admin panels
@@ -37,7 +37,9 @@ through the VPN.
 git clone <repository> services-deploy
 cd services-deploy
 
-touch gateway/.env monitoring/.env databases/mysql/.env databases/postgres/.env
+touch .env gateway/.env monitoring/.env databases/mysql/.env databases/postgres/.env
+
+export COMPOSE_ENV_FILES=.env.dev,.env
 
 docker compose up -d
 docker compose ps
@@ -47,9 +49,16 @@ The replicas clone their primary on the first start, so give them a minute
 (the MySQL replica restarts once after cloning). Before deploying to a real
 server, change the default passwords and set `VPN_HOST`.
 
+`COMPOSE_ENV_FILES` makes Compose load the global `.env.dev` and `.env`. Set it
+once per machine instead of in every shell: add the `export` line to
+`~/.bashrc` on Linux, or run `setx COMPOSE_ENV_FILES ".env.dev,.env"` on
+Windows and open a new terminal. Without it, Compose stops with
+`project name must not be empty`.
+
 ## Repository layout
 
 ```
+.env.dev                     global: project name, network, time zone
 compose.yaml                 includes every stack, defines the network
 gateway/
   vpn/                       WireGuard VPN
@@ -75,14 +84,26 @@ another stack: each one waits for what it needs by itself.
 
 ## Configuration
 
-Every stack loads two env files, in order:
+The root and every stack load two env files, in order:
 
 | File | Committed | Purpose |
 |---|---|---|
 | `.env.dev` | yes | Development defaults |
 | `.env` | no | Local overrides and secrets (wins over `.env.dev`) |
 
-A root `.env` is optional and wins over both stack files for the whole project.
+The root files are global: they are loaded through `COMPOSE_ENV_FILES`, reach
+every stack and win over the stack files for the same key.
+
+| Global variable | Default | Purpose |
+|---|---|---|
+| `PROJECT_NAME` | `services` | Prefix of containers and volumes. Renaming it orphans existing volumes. |
+| `NETWORK_NAME` | `services-internal-network` | Internal Docker network |
+| `NETWORK_SUBNET` | `172.30.0.0/16` | Its subnet, also routed through the VPN |
+| `TZ` | `Etc/UTC` | Time zone of every container |
+
+UTC is recommended for `TZ`: PMM, Grafana and Dozzle show times in the
+browser's time zone anyway. pmm-client, cAdvisor and Dozzle have no time zone
+data and stay on UTC, and PostgreSQL keeps the zone it was initialized with.
 
 Production values to set:
 
@@ -200,12 +221,12 @@ Cap Docker log size on the server in `/etc/docker/daemon.json`:
 
 ```sh
 docker compose rm -sf mysql-replica-db
-docker volume rm services_mysql-replica-data
+docker volume rm <PROJECT_NAME>_mysql-replica-data
 docker compose up -d mysql-replica-db
 docker compose restart pmm-client
 ```
 
-Same for `postgres-replica-db` / `services_postgres-replica-data`.
+Same for `postgres-replica-db` / `<PROJECT_NAME>_postgres-replica-data`.
 
 ## Production checklist
 

@@ -1,20 +1,73 @@
+# ============================================================================
+# PMM Server (Percona Monitoring and Management 3)
+#
+# Purpose:       Central monitoring server: Grafana dashboards, metrics
+#                storage (VictoriaMetrics), Query Analytics (ClickHouse) and
+#                alerting.
+# Role:          PMM clients register their node, containers (cAdvisor) and
+#                databases here. One PMM Server for the whole deployment.
+#                Reachable only through the VPN at https://pmm-server:8443.
+# Prerequisites: - 2+ CPU cores and 4+ GB RAM, plus disk for PMM_DATA_RETENTION
+#                - PMM_ADMIN_PASSWORD set before the first start
+# Variables:     PMM_ADMIN_PASSWORD, PMM_DATA_RETENTION, ALERT_EMAIL_ENABLED,
+#                SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM.
+#                TZ from the root .env.dev.
+# ============================================================================
+
 services:
   pmm-server:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
     image: percona/pmm-server:3
     restart: always
+
+    # --------------------------------------------------------------------------
+    # Server settings
+    # --------------------------------------------------------------------------
     environment:
+      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # Dashboards show times in the browser's time zone regardless.
+      TZ: ${TZ:-Etc/UTC}
+      # PMM_ADMIN_PASSWORD: password of the "admin" user.
       PMM_ADMIN_PASSWORD: ${PMM_ADMIN_PASSWORD}
+      # PMM_DATA_RETENTION: how long metrics and QAN data are kept. Default: 720h.
       PMM_DATA_RETENTION: ${PMM_DATA_RETENTION:-720h}
+      # PMM_ENABLE_UPDATES: "false" hides update checks (the image is pinned).
       PMM_ENABLE_UPDATES: "false"
+      # PMM_ENABLE_TELEMETRY: "false" disables usage reporting to Percona.
       PMM_ENABLE_TELEMETRY: "false"
+
+      # --- Alert email (Grafana SMTP) ---------------------------------------
+      # GF_SMTP_ENABLED: enables outgoing email. Default: false.
       GF_SMTP_ENABLED: ${ALERT_EMAIL_ENABLED:-false}
+      # GF_SMTP_HOST: SMTP server as host:port. Port default: 587.
       GF_SMTP_HOST: ${SMTP_HOST}:${SMTP_PORT:-587}
+      # GF_SMTP_USER: SMTP login (empty: no authentication).
       GF_SMTP_USER: ${SMTP_USER}
+      # GF_SMTP_PASSWORD: SMTP password.
       GF_SMTP_PASSWORD: ${SMTP_PASSWORD}
+      # GF_SMTP_FROM_ADDRESS: sender address of alert emails.
       GF_SMTP_FROM_ADDRESS: ${SMTP_FROM}
+
+    # --------------------------------------------------------------------------
+    # Storage and custom dashboards
+    # --------------------------------------------------------------------------
+    # No published ports: reachable only through the VPN.
     volumes:
+      # All PMM state: metrics, QAN, Grafana settings, alert rules.
       - pmm-data:/srv
+      # Custom dashboards, provisioned into the Grafana folder "Custom" (the
+      # directory name). PMM re-reads it every 60 s, so JSON edits apply
+      # without a restart. Percona's own dashboards in the same tree are
+      # overwritten on every start, which is why ours are separate files.
       - ./dashboards/Custom:/usr/share/percona-dashboards/panels/pmm-app/dist/dashboards/Custom:ro
+
+    # --------------------------------------------------------------------------
+    # Health check
+    # --------------------------------------------------------------------------
+    # Healthy once PMM's readiness endpoint answers (self-signed TLS, -k).
+    # PMM takes a while to start, hence the long start period.
     healthcheck:
       test: ["CMD-SHELL", "curl -sfk https://127.0.0.1:8443/v1/server/readyz"]
       interval: 10s
@@ -22,5 +75,9 @@ services:
       retries: 12
       start_period: 120s
 
+# ----------------------------------------------------------------------------
+# Volumes
+# ----------------------------------------------------------------------------
 volumes:
+  # PMM Server data. Deleting it loses metrics history, settings and alerts.
   pmm-data:
