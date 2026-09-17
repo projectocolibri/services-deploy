@@ -2,7 +2,9 @@
 
 Docker Compose deployment of shared infrastructure: MySQL (Percona Server) and
 PostgreSQL (Percona Distribution), each with a read-only replica, a VPN and an
-HTTP gateway, and monitoring (PMM and Dozzle).
+HTTP gateway, and monitoring (PMM and Dozzle). It also runs the company's apps:
+Eclipse RCP services with their own JRE and Angular apps with server-side
+rendering.
 
 Everything runs on **one server**, as one Compose project (`PROJECT_NAME`,
 default `services`) brought up by a single `docker compose up -d`. The only
@@ -80,6 +82,9 @@ databases/
     replica/                 read-only replica (postgres-replica-db)
     admin/                   pgAdmin
     backup/                  pg_basebackup, WAL stream, restore script
+apps/
+  rcp-service-example/       Eclipse RCP export + Linux JRE (source/, jre/)
+  angular-app-example/       Angular SSR build run by Node.js (source/)
 ```
 
 Every folder with a `compose.yaml` is a stack. Stacks list their sub-stacks
@@ -104,9 +109,11 @@ its root `.env` differs.
 | `replica` | MySQL and PostgreSQL replicas |
 | `backup` | Backups of the replicas and log streams (next to the replicas) |
 | `admin` | phpMyAdmin and pgAdmin |
+| `apps` | Every app under `apps/` (or one app by its service name, e.g. `rcp-service-example`) |
 
 `primary`, `replica`, `backup` and `admin` also exist per engine, e.g.
-`mysql-primary`, `postgres-backup`.
+`mysql-primary`, `postgres-backup`. The apps are not in the default roles:
+add them where they run, e.g. `COMPOSE_PROFILES=http,apps`.
 
 ```env
 # One server with everything (default in .env.dev)
@@ -132,7 +139,7 @@ nothing (`no service selected`).
 
 ## Configuration
 
-The root and every stack load two env files, in order:
+The root and every stack except `apps/` load two env files, in order:
 
 | File | Committed | Purpose |
 |---|---|---|
@@ -334,6 +341,79 @@ docker rm -f postgres-restore; docker volume rm postgres-restore
 
 Run a restore regularly (e.g. monthly) to prove the backups work.
 
+## Apps
+
+Each app is a folder in `apps/` with three parts:
+
+| File | Purpose |
+|---|---|
+| `source/` | The app export (not committed) |
+| `Dockerfile` | Copies the export into the image and runs it, with fixed settings |
+| `compose.yaml` | The service: profiles, time zone, volumes |
+
+Apps have no env files: what an app runs is fixed in its Dockerfile. They are
+internal; publish them through the HTTP gateway (see
+[HTTP (nginx)](#http-nginx)) or reach them through the VPN.
+
+```sh
+docker compose --profile apps up -d --build     # or add apps to COMPOSE_PROFILES
+docker compose logs -f rcp-service-example
+```
+
+- **Deploy a new version**: replace the files in `source/` (and `jre/`) and
+  rebuild: `docker compose up -d --build <app>`.
+- **Add an app**: copy the example of the same type to `apps/<app>`, rename
+  the service in its `compose.yaml` (and the launcher in the RCP
+  `Dockerfile`), and include it in `apps/compose.yaml`.
+
+### RCP service (`rcp-service-example`)
+
+1. Export the product for Linux (e.g. `linux.gtk.x86_64`) into
+   `apps/rcp-service-example/source/`: the launcher `rcp-service-example`,
+   `rcp-service-example.ini`, `plugins/`, `configuration/`, ...
+2. Put a Linux JRE of the same architecture in `apps/rcp-service-example/jre/`
+   (`jre/bin/java`), e.g. Java 8 for older apps.
+3. `docker compose up -d --build rcp-service-example`.
+
+The Dockerfile copies `source/` to `/app` and `jre/` to `/app/jre`, with
+executable permissions (they are lost when the export passes through Windows),
+and runs:
+
+```sh
+./rcp-service-example -nosplash -consoleLog -data /data/workspace
+```
+
+- The launcher finds the JRE in `/app/jre` by itself: no `-vm` needed.
+- JVM options (memory, system properties) go in the `-vmargs` of the exported
+  `.ini`.
+- The workspace (`-data`) and the user's home (`/data`) are in the
+  `rcp-service-example-data` volume, so they survive new versions.
+- The Eclipse log goes to `docker compose logs` (`-consoleLog`).
+- It runs headless, with no GTK installed. An app that loads SWT needs
+  `libgtk-3-0 libxtst6` added to the `apt-get install` in the Dockerfile.
+- The launcher starts Java as a child process: on `docker compose stop` Java
+  is killed without running its shutdown hooks.
+
+### Angular app (`angular-app-example`)
+
+1. Build the Angular SSR app (`ng build`) and copy the content of
+   `dist/<app>/` (`server/`, `browser/`) into
+   `apps/angular-app-example/source/`. The server bundle already contains
+   Express and Angular: no `node_modules`.
+2. `docker compose up -d --build angular-app-example`.
+3. Publish it: in `gateway/http/conf.d/<app>.conf` use
+   `proxy_pass http://angular-app-example:4000`, and add the domain to
+   `NG_ALLOWED_HOSTS` in the Dockerfile.
+
+The Dockerfile copies `source/` to `/app` and runs `node server/server.mjs`
+(Node.js 24) on port 4000.
+
+- `NG_ALLOWED_HOSTS` lists the host names Angular renders for; requests for
+  any other host get `400 Bad Request`. Default:
+  `localhost,angular-app-example`.
+- `NG_TRUST_PROXY_HEADERS=x-forwarded-proto` lets pages rendered behind the
+  HTTP gateway know they are served over HTTPS.
+
 ## Monitoring
 
 | Tool | What it shows | URL (through the VPN) |
@@ -393,3 +473,5 @@ Same for `postgres-replica-db` / `<PROJECT_NAME>_postgres-replica-data`.
 - [ ] `BACKUP_DIR` on a separate disk, backup
       services healthy, and a test restore done
 - [ ] Off-site copy of the backup directories
+- [ ] Apps: exports in `source/` (and JREs in `jre/`), public domains in
+      `NG_ALLOWED_HOSTS`, apps running

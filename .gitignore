@@ -25,6 +25,17 @@
 databases/*/backup/backups/
 
 # ----------------------------------------------------------------------------
+# App binaries and build output
+# ----------------------------------------------------------------------------
+# App exports (apps/<app>/source/) and JREs (apps/<app>/jre/) are copied into
+# the app images at build time and never committed. The .gitkeep placeholders
+# keep the empty folders.
+apps/*/source/*
+!apps/*/source/.gitkeep
+apps/*/jre/*
+!apps/*/jre/.gitkeep
+
+# ----------------------------------------------------------------------------
 # VPN gateway state (WireGuard)
 # ----------------------------------------------------------------------------
 # Host: server keys, peer keys and generated client configs are secrets

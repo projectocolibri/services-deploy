@@ -1,0 +1,36 @@
+# ============================================================================
+# Angular app example (server-side rendering)
+#
+# Purpose:       Runs the Angular SSR build in ./source with Node.js.
+# Role:          Internal service on port 4000: published through the HTTP
+#                gateway (gateway/http/conf.d/<app>.conf with
+#                proxy_pass http://angular-app-example:4000), or reached
+#                through the VPN at http://angular-app-example:4000.
+#                To deploy a new version, replace the files and run
+#                `docker compose up -d --build angular-app-example`.
+# Prerequisites: - ./source: content of dist/<app>/ from `ng build` (not
+#                  committed)
+#                - The public domain in NG_ALLOWED_HOSTS (./Dockerfile)
+# Variables:     TZ from the root .env.dev.
+# ============================================================================
+
+services:
+  angular-app-example:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    build:
+      context: .
+    restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [apps, angular-app-example]
+    # tini as PID 1: forwards stop signals to node.
+    init: true
+
+    # --------------------------------------------------------------------------
+    # Time zone
+    # --------------------------------------------------------------------------
+    environment:
+      # TZ: time zone of the server (logs, dates rendered on the server), from
+      # the root .env.dev. Default: Etc/UTC.
+      TZ: ${TZ:-Etc/UTC}

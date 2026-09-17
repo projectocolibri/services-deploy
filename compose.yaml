@@ -46,6 +46,10 @@ include:
   # PostgreSQL: Percona Distribution primary, read-only replica and pgAdmin.
   - path: ./databases/postgres/compose.yaml
 
+  # Apps: Eclipse RCP service and Angular SSR app examples. No env files:
+  # settings are fixed in each app's Dockerfile.
+  - path: ./apps/compose.yaml
+
 # ----------------------------------------------------------------------------
 # Shared internal network
 # ----------------------------------------------------------------------------

@@ -1,0 +1,53 @@
+# ============================================================================
+# RCP service example
+#
+# Purpose:       Runs an Eclipse RCP application exported for Linux, with its
+#                own JRE, as an internal service.
+# Role:          The image contains the export (./source -> /app) and the JRE
+#                (./jre -> /app/jre) and runs the launcher (see ./Dockerfile).
+#                To deploy a new version, replace the files and run
+#                `docker compose up -d --build rcp-service-example`.
+#                Not published: reached through the VPN, or through the HTTP
+#                gateway if it serves HTTP (gateway/http/conf.d).
+# Prerequisites: - ./source: Linux export of the product (not committed)
+#                - ./jre: Linux JRE of the same architecture (not committed)
+# Variables:     TZ from the root .env.dev.
+# ============================================================================
+
+services:
+  rcp-service-example:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    build:
+      context: .
+    restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [apps, rcp-service-example]
+    # tini as PID 1: forwards stop signals to the launcher and reaps processes
+    # the app starts. Java runs as a child of the launcher and is killed on
+    # stop without running its shutdown hooks.
+    init: true
+
+    # --------------------------------------------------------------------------
+    # Time zone
+    # --------------------------------------------------------------------------
+    environment:
+      # TZ: container and JVM time zone, from the root .env.dev.
+      # Default: Etc/UTC.
+      TZ: ${TZ:-Etc/UTC}
+
+    # --------------------------------------------------------------------------
+    # Data
+    # --------------------------------------------------------------------------
+    volumes:
+      # Workspace (-data) and home of the app user: preferences and files the
+      # app keeps between restarts and new versions.
+      - rcp-service-example-data:/data
+
+# ----------------------------------------------------------------------------
+# Volumes
+# ----------------------------------------------------------------------------
+volumes:
+  # Persistent data of the app (/data).
+  rcp-service-example-data:
