@@ -1,16 +1,19 @@
 # ============================================================================
-# RCP service example (Eclipse RCP application exported for Linux)
+# Java service example (Java application exported for Linux)
 #
-# Purpose:       Image with an Eclipse RCP product and its JRE, ready to run.
+# Purpose:       Image with a Java application and its JRE, ready to run.
 # Role:          Copies the Linux export (./source) to /app and the JRE
-#                (./jre) to /app/jre, where the Eclipse launcher finds it, and
-#                runs the launcher. To deploy a new version, replace the files
+#                (./jre) to /app/jre, where the launcher finds it, and
+#                runs the launcher. The app serves HTTP on port 8080 (exposed
+#                in compose.yaml). To deploy a new version, replace the files
 #                and rebuild:
-#                  docker compose up -d --build rcp-service-example
+#                  docker compose up -d --build java-service-example
 # Prerequisites: - Build context: this directory (compose.yaml sets it)
-#                - ./source: Linux export of the product, with the launcher
-#                  rcp-service-example and rcp-service-example.ini
+#                - ./source: Linux export of the application, with the launcher
+#                  java-service-example and java-service-example.ini
 #                - ./jre: Linux JRE (bin/java) of the launcher's architecture
+#                - The app's HTTP server configured to listen on port 8080,
+#                  on all interfaces (0.0.0.0), not only localhost
 # Variables:     None.
 # ============================================================================
 
@@ -38,7 +41,7 @@ RUN useradd --uid 1000 --home-dir /data --create-home --shell /usr/sbin/nologin 
 # Application and JRE
 # ----------------------------------------------------------------------------
 # --chmod=755: executable launcher and JRE tools, even when the export went
-# through Windows. Owned by app: the OSGi runtime writes to configuration/.
+# through Windows. Owned by app: the application writes to configuration/.
 COPY --chown=app:app --chmod=755 source/ /app/
 COPY --chown=app:app --chmod=755 jre/ /app/jre/
 
@@ -52,6 +55,6 @@ WORKDIR /app
 # Run
 # ----------------------------------------------------------------------------
 #   -nosplash              no splash screen (no display in a container)
-#   -consoleLog            Eclipse log to stdout (docker compose logs)
+#   -consoleLog            application log to stdout (docker compose logs)
 #   -data /data/workspace  workspace in the persistent volume
-CMD ["./rcp-service-example", "-nosplash", "-consoleLog", "-data", "/data/workspace"]
+CMD ["./java-service-example", "-nosplash", "-consoleLog", "-data", "/data/workspace"]

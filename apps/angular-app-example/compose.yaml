@@ -28,6 +28,15 @@ services:
     init: true
 
     # --------------------------------------------------------------------------
+    # HTTP port
+    # --------------------------------------------------------------------------
+    # Port the SSR server listens on (PORT in the Dockerfile). Exposed to the
+    # internal network only, not published on the host: the HTTP gateway
+    # reaches it at http://angular-app-example:4000.
+    expose:
+      - "4000"
+
+    # --------------------------------------------------------------------------
     # Time zone
     # --------------------------------------------------------------------------
     environment:

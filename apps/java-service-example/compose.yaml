@@ -1,21 +1,24 @@
 # ============================================================================
-# RCP service example
+# Java service example
 #
-# Purpose:       Runs an Eclipse RCP application exported for Linux, with its
-#                own JRE, as an internal service.
+# Purpose:       Runs a Java application exported for Linux, with its
+#                own JRE, as an internal HTTP service on port 8080.
 # Role:          The image contains the export (./source -> /app) and the JRE
 #                (./jre -> /app/jre) and runs the launcher (see ./Dockerfile).
 #                To deploy a new version, replace the files and run
-#                `docker compose up -d --build rcp-service-example`.
-#                Not published: reached through the VPN, or through the HTTP
-#                gateway if it serves HTTP (gateway/http/conf.d).
+#                `docker compose up -d --build java-service-example`.
+#                Not published on the host: reached through the HTTP gateway
+#                (gateway/http/conf.d/<app>.conf with
+#                proxy_pass http://java-service-example:8080), or through the
+#                VPN at http://java-service-example:8080.
 # Prerequisites: - ./source: Linux export of the product (not committed)
 #                - ./jre: Linux JRE of the same architecture (not committed)
+#                - The app listening for HTTP on 0.0.0.0:8080
 # Variables:     TZ from the root .env.dev.
 # ============================================================================
 
 services:
-  rcp-service-example:
+  java-service-example:
     # --------------------------------------------------------------------------
     # Image and restart policy
     # --------------------------------------------------------------------------
@@ -23,11 +26,20 @@ services:
       context: .
     restart: always
     # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [apps, rcp-service-example]
+    profiles: [apps, java-service-example]
     # tini as PID 1: forwards stop signals to the launcher and reaps processes
     # the app starts. Java runs as a child of the launcher and is killed on
     # stop without running its shutdown hooks.
     init: true
+
+    # --------------------------------------------------------------------------
+    # HTTP port
+    # --------------------------------------------------------------------------
+    # Port the app's HTTP server listens on (must match the port set in the
+    # app). Exposed to the internal network only, not published on the host:
+    # the HTTP gateway reaches it at http://java-service-example:8080.
+    expose:
+      - "8080"
 
     # --------------------------------------------------------------------------
     # Time zone
@@ -43,11 +55,24 @@ services:
     volumes:
       # Workspace (-data) and home of the app user: preferences and files the
       # app keeps between restarts and new versions.
-      - rcp-service-example-data:/data
+      - java-service-example-data:/data
+
+    # --------------------------------------------------------------------------
+    # Health check
+    # --------------------------------------------------------------------------
+    # Healthy once the app accepts connections on its HTTP port (8080). Uses
+    # bash's /dev/tcp, so no HTTP client is needed in the image. The start
+    # period gives the application time to start the HTTP server.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
 
 # ----------------------------------------------------------------------------
 # Volumes
 # ----------------------------------------------------------------------------
 volumes:
   # Persistent data of the app (/data).
-  rcp-service-example-data:
+  java-service-example-data:

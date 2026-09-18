@@ -5,25 +5,25 @@
 # Role:          One folder per app, each with its export in source/, a
 #                Dockerfile that copies it into the image with fixed settings
 #                and a compose.yaml:
-#                - rcp-service-example: Eclipse RCP application exported for
+#                - java-service-example: Java application exported for
 #                  Linux, run with its own JRE
 #                - angular-app-example: Angular SSR build, run by Node.js
 #                New app: copy the example folder of the same type to
-#                apps/<app>, rename the service (and the RCP launcher), and
+#                apps/<app>, rename the service (and the Java launcher), and
 #                include it below.
 #                Each app runs only when COMPOSE_PROFILES (root .env) includes
 #                apps (every app) or its service name.
 # Prerequisites: - The export in each app's source/ (not committed)
-#                - The Linux JRE in rcp-service-example/jre/ (not committed)
+#                - The Linux JRE in java-service-example/jre/ (not committed)
 # Variables:     None: settings are fixed in each app's Dockerfile. TZ comes
 #                from the root .env.dev.
 # ============================================================================
 
 include:
   # --------------------------------------------------------------------------
-  # RCP service (Eclipse RCP export + JRE)
+  # Java service (Linux export + JRE)
   # --------------------------------------------------------------------------
-  - path: ./rcp-service-example/compose.yaml
+  - path: ./java-service-example/compose.yaml
 
   # --------------------------------------------------------------------------
   # Angular app (SSR build run by Node.js)

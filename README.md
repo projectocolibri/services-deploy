@@ -3,7 +3,7 @@
 Docker Compose deployment of shared infrastructure: MySQL (Percona Server) and
 PostgreSQL (Percona Distribution), each with a read-only replica, a VPN and an
 HTTP gateway, and monitoring (PMM and Dozzle). It also runs the company's apps:
-Eclipse RCP services with their own JRE and Angular apps with server-side
+Java services with their own JRE and Angular apps with server-side
 rendering.
 
 Everything runs on **one server**, as one Compose project (`PROJECT_NAME`,
@@ -83,7 +83,7 @@ databases/
     admin/                   pgAdmin
     backup/                  pg_basebackup, WAL stream, restore script
 apps/
-  rcp-service-example/       Eclipse RCP export + Linux JRE (source/, jre/)
+  java-service-example/      Java app export + Linux JRE (source/, jre/)
   angular-app-example/       Angular SSR build run by Node.js (source/)
 ```
 
@@ -109,7 +109,7 @@ its root `.env` differs.
 | `replica` | MySQL and PostgreSQL replicas |
 | `backup` | Backups of the replicas and log streams (next to the replicas) |
 | `admin` | phpMyAdmin and pgAdmin |
-| `apps` | Every app under `apps/` (or one app by its service name, e.g. `rcp-service-example`) |
+| `apps` | Every app under `apps/` (or one app by its service name, e.g. `java-service-example`) |
 
 `primary`, `replica`, `backup` and `admin` also exist per engine, e.g.
 `mysql-primary`, `postgres-backup`. The apps are not in the default roles:
@@ -357,40 +357,49 @@ internal; publish them through the HTTP gateway (see
 
 ```sh
 docker compose --profile apps up -d --build     # or add apps to COMPOSE_PROFILES
-docker compose logs -f rcp-service-example
+docker compose logs -f java-service-example
 ```
 
 - **Deploy a new version**: replace the files in `source/` (and `jre/`) and
   rebuild: `docker compose up -d --build <app>`.
 - **Add an app**: copy the example of the same type to `apps/<app>`, rename
-  the service in its `compose.yaml` (and the launcher in the RCP
-  `Dockerfile`), and include it in `apps/compose.yaml`.
+  the service in its `compose.yaml` (and the launcher in the Java
+  service `Dockerfile`), and include it in `apps/compose.yaml`.
 
-### RCP service (`rcp-service-example`)
+### Java service (`java-service-example`)
 
-1. Export the product for Linux (e.g. `linux.gtk.x86_64`) into
-   `apps/rcp-service-example/source/`: the launcher `rcp-service-example`,
-   `rcp-service-example.ini`, `plugins/`, `configuration/`, ...
-2. Put a Linux JRE of the same architecture in `apps/rcp-service-example/jre/`
+1. Export the app for Linux (e.g. x86_64) into
+   `apps/java-service-example/source/`: the launcher `java-service-example`,
+   `java-service-example.ini`, `plugins/`, `configuration/`, ...
+2. Put a Linux JRE of the same architecture in `apps/java-service-example/jre/`
    (`jre/bin/java`), e.g. Java 8 for older apps.
-3. `docker compose up -d --build rcp-service-example`.
+3. `docker compose up -d --build java-service-example`.
 
 The Dockerfile copies `source/` to `/app` and `jre/` to `/app/jre`, with
 executable permissions (they are lost when the export passes through Windows),
 and runs:
 
 ```sh
-./rcp-service-example -nosplash -consoleLog -data /data/workspace
+./java-service-example -nosplash -consoleLog -data /data/workspace
 ```
 
+The app serves HTTP on port **8080**, inside the Docker network only. Publish
+it through the HTTP gateway: in `gateway/http/conf.d/<app>.conf` use
+`proxy_pass http://java-service-example:8080`. Through the VPN it is at
+`http://java-service-example:8080`.
+
+- Configure the app's HTTP server to listen on `0.0.0.0:8080`: a server
+  bound to `localhost` is unreachable from other containers.
+- The container is healthy once port 8080 accepts connections (2 minutes of
+  start time allowed).
 - The launcher finds the JRE in `/app/jre` by itself: no `-vm` needed.
 - JVM options (memory, system properties) go in the `-vmargs` of the exported
   `.ini`.
 - The workspace (`-data`) and the user's home (`/data`) are in the
-  `rcp-service-example-data` volume, so they survive new versions.
-- The Eclipse log goes to `docker compose logs` (`-consoleLog`).
-- It runs headless, with no GTK installed. An app that loads SWT needs
-  `libgtk-3-0 libxtst6` added to the `apt-get install` in the Dockerfile.
+  `java-service-example-data` volume, so they survive new versions.
+- The app's log goes to `docker compose logs` (`-consoleLog`).
+- It runs headless, with no GUI libraries installed. An app that loads a
+  GUI toolkit needs `libgtk-3-0 libxtst6` added to the `apt-get install` in the Dockerfile.
 - The launcher starts Java as a child process: on `docker compose stop` Java
   is killed without running its shutdown hooks.
 

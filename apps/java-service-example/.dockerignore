@@ -1,5 +1,5 @@
 # ============================================================================
-# Docker build context exclusions (rcp-service-example)
+# Docker build context exclusions (java-service-example)
 #
 # Purpose:       Keeps repository placeholders out of the image.
 # Role:          source/ and jre/ are copied into the image; their .gitkeep
