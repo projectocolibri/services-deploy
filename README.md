@@ -168,8 +168,8 @@ Production values to set:
 | Stack | Variables |
 |---|---|
 | `gateway` | `VPN_HOST`, `VPN_PEERS` |
-| `databases/mysql` | `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_USER_PASSWORD`, `MYSQL_REPLICATION_PASSWORD`, `MYSQL_MONITOR_PASSWORD` |
-| `databases/postgres` | `POSTGRES_PASSWORD`, `POSTGRES_REPLICATION_PASSWORD`, `POSTGRES_MONITOR_PASSWORD`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
+| `databases/mysql` | `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_USER_PASSWORD`, `MYSQL_REPLICATION_PASSWORD`, `MYSQL_MONITOR_PASSWORD`, `MYSQL_DATABASES` |
+| `databases/postgres` | `POSTGRES_PASSWORD`, `POSTGRES_REPLICATION_PASSWORD`, `POSTGRES_MONITOR_PASSWORD`, `POSTGRES_APP_USER`, `POSTGRES_APP_PASSWORD`, `POSTGRES_DATABASES`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
 | `monitoring` | `PMM_ADMIN_PASSWORD`, `MONITOR_MYSQL_PASSWORD`, `MONITOR_POSTGRES_PASSWORD`, `SMTP_*` |
 
 The `MONITOR_*` credentials must match the `*_MONITOR_*` values of the database
@@ -273,6 +273,29 @@ docker compose exec mysql-replica-db mysql -uroot -p -e "SHOW REPLICA STATUS\G"
 docker compose exec postgres-replica-db psql -U postgres -c "SELECT status, sender_host FROM pg_stat_wal_receiver"
 docker compose exec postgres-db psql -U postgres -c "SELECT client_addr, state, replay_lag FROM pg_stat_replication"
 ```
+
+### Application databases
+
+Naming databases in these variables has the primary create them on every
+start, so a new server needs no manual `CREATE DATABASE`. Existing databases
+and roles are never changed or dropped: removing a name only stops creating
+it, and a new password does not change a role that already exists. The
+replicas get the databases through replication.
+
+| | MySQL | PostgreSQL |
+|---|---|---|
+| Databases | `MYSQL_DATABASES` (empty: nothing is created) | `POSTGRES_DATABASES` (empty: nothing is created) |
+| Owner / grants | all privileges to `MYSQL_USER` | owned by `POSTGRES_APP_USER` (`POSTGRES_APP_PASSWORD`), created if missing |
+| Names | lowercase letters, digits and `_`; a name with `%` is a grant-only pattern (`app%`), so the app can create matching databases itself | lowercase letters, digits and `_` |
+
+Two settings are fixed when the primary's data volume is initialized and need
+a new volume to change:
+
+- MySQL runs with `--lower-case-table-names=1` (names stored lowercase and
+  matched case-insensitively) on both primary and replica, which must match or
+  the clone is refused.
+- PostgreSQL is initialized with `--encoding=UTF8 --locale=C.UTF-8`
+  (`POSTGRES_INITDB_ARGS`) instead of the image's `SQL_ASCII`.
 
 ### Admin panels
 

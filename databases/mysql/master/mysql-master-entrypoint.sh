@@ -4,11 +4,15 @@
 #
 # Purpose:       Starts Percona Server as the primary through the image's
 #                normal entrypoint, with a fixed server ID.
-# Role:          Supports promotion: if this data directory used to belong to
-#                a replica (the replica's volume was attached to the primary
-#                service), its replication settings are removed in the
-#                background once the server is up, so it never follows the old
-#                primary again.
+# Role:          Once the server is up, in the background, on every start:
+#                - Promotion: if this data directory used to belong to a
+#                  replica (the replica's volume was attached to the primary
+#                  service), its replication settings are removed, so it never
+#                  follows the old primary again.
+#                - Databases: creates each database in DATABASES that does not
+#                  exist yet and grants MYSQL_USER all privileges on it.
+#                  Existing databases and their data are left untouched. The
+#                  replica gets them through replication.
 # Prerequisites: - Percona Server image (provides /docker-entrypoint.sh, mysql
 #                  and mysqladmin)
 #                - MYSQL_ROOT_PASSWORD set in the container environment
@@ -17,6 +21,8 @@
 #   server_id            (local) MySQL server ID of the primary. Must differ
 #                        from the replica's. Fixed value: 1
 #   MYSQL_ROOT_PASSWORD  (env) root password used for local admin queries
+#   MYSQL_USER           (env) application user granted access to DATABASES
+#   DATABASES            (env) comma-separated database names to create
 #   MYSQL_PWD            (env, per command) password read by the mysql client,
 #                        keeps it off the command line
 #   "$@"                 (args) command from compose.yaml (mysqld and options)
@@ -39,24 +45,74 @@ query() {
 }
 
 # ----------------------------------------------------------------------------
-# Promotion cleanup (runs in the background)
+# Promotion cleanup
 # ----------------------------------------------------------------------------
-# Waits for the real server, then drops any replication configuration left
-# over from when this data was a replica.
+# Drops any replication configuration left over from when this data was a
+# replica.
 forget_source() {
-    # The temporary server used during first-time initialization has
-    # networking disabled, so a TCP ping only succeeds on the real server.
-    until MYSQL_PWD="${MYSQL_ROOT_PASSWORD}" mysqladmin ping --protocol=tcp -h127.0.0.1 -uroot --silent >/dev/null 2>&1; do
-        sleep 2
-    done
-
     # SHOW REPLICA STATUS is empty on a server that never replicated.
     if [ -n "$(query "SHOW REPLICA STATUS")" ]; then
         query "STOP REPLICA; RESET REPLICA ALL;" && echo "[primary] promoted: replication settings removed"
     fi
 }
 
-forget_source &
+# ----------------------------------------------------------------------------
+# Application databases
+# ----------------------------------------------------------------------------
+# Creates every database in DATABASES that does not exist yet and grants
+# MYSQL_USER all privileges on it. A name with % is a pattern (app% = every
+# database starting with app): nothing is created, MYSQL_USER is only granted
+# all privileges on the matching databases, including creating them. Safe to
+# run on every start.
+create_databases() {
+    local db dbs
+    IFS=',' read -ra dbs <<< "${DATABASES}"
+    for db in "${dbs[@]}"; do
+        # Ignore spaces around names and empty entries.
+        db="${db//[[:space:]]/}"
+        [ -n "${db}" ] || continue
+        # Plain names only: they are inserted into SQL between backticks.
+        # Lowercase, like every name on this server (--lower-case-table-names=1).
+        db="${db,,}"
+        if [[ ! "${db}" =~ ^[a-z0-9_%]+$ ]]; then
+            echo "[primary] database '${db}' skipped: use only letters, digits, _ and %"
+            continue
+        fi
+
+        # Pattern: grant only, with its wildcards as written.
+        if [[ "${db}" == *%* ]]; then
+            if [ -n "${MYSQL_USER}" ]; then
+                query "GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${MYSQL_USER}'@'%';" || continue
+                echo "[primary] databases granted: ${db}"
+            fi
+            continue
+        fi
+
+        query "CREATE DATABASE IF NOT EXISTS \`${db}\`;" || continue
+        # In GRANT, _ is a wildcard: \_ matches only this database.
+        if [ -n "${MYSQL_USER}" ]; then
+            query "GRANT ALL PRIVILEGES ON \`${db//_/\\_}\`.* TO '${MYSQL_USER}'@'%';" || continue
+        fi
+        echo "[primary] database ready: ${db}"
+    done
+}
+
+# ----------------------------------------------------------------------------
+# Post-start tasks (run in the background)
+# ----------------------------------------------------------------------------
+# Waits for the real server, then runs the tasks above.
+after_start() {
+    # The temporary server used during first-time initialization has
+    # networking disabled, so a TCP ping only succeeds on the real server.
+    until MYSQL_PWD="${MYSQL_ROOT_PASSWORD}" mysqladmin ping --protocol=tcp -h127.0.0.1 -uroot --silent >/dev/null 2>&1; do
+        sleep 2
+    done
+
+    forget_source
+    create_databases
+}
+
+after_start &
 
 # ----------------------------------------------------------------------------
 # Start MySQL

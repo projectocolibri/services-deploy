@@ -62,6 +62,8 @@ services:
     #                               hostname changes on every recreate
     #   --relay-log-recovery        discard unprocessed relay logs after a
     #                               crash and fetch them again from the primary
+    #   --lower-case-table-names=1  lowercase names, must match the primary
+    #                               (the clone refuses a different value)
     command:
       - mysqld
       - --log-bin=mysql-bin
@@ -71,6 +73,7 @@ services:
       - --read-only=ON
       - --relay-log=mysql-replica-relay-bin
       - --relay-log-recovery=ON
+      - --lower-case-table-names=1
 
     # --------------------------------------------------------------------------
     # Network

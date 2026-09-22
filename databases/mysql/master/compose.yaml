@@ -10,7 +10,7 @@
 #                  file
 # Variables:     MYSQL_ROOT_PASSWORD, MYSQL_USER, MYSQL_USER_PASSWORD,
 #                MYSQL_REPLICATION_USER, MYSQL_REPLICATION_PASSWORD,
-#                MYSQL_MONITOR_USER, MYSQL_MONITOR_PASSWORD.
+#                MYSQL_MONITOR_USER, MYSQL_MONITOR_PASSWORD, MYSQL_DATABASES.
 #                TZ from the root .env.dev.
 # ============================================================================
 
@@ -47,12 +47,16 @@ services:
       MONITOR_USER: ${MYSQL_MONITOR_USER}
       # MONITOR_PASSWORD: password of MONITOR_USER.
       MONITOR_PASSWORD: ${MYSQL_MONITOR_PASSWORD}
+      # DATABASES: databases created on every start if missing, with all
+      # privileges for MYSQL_USER (mysql-master-entrypoint.sh).
+      DATABASES: ${MYSQL_DATABASES:-}
 
     # --------------------------------------------------------------------------
     # Startup
     # --------------------------------------------------------------------------
-    # Wrapper around the image entrypoint: sets server_id and removes old
-    # replication settings if this data was a promoted replica.
+    # Wrapper around the image entrypoint: sets server_id, removes old
+    # replication settings if this data was a promoted replica, and creates
+    # the databases in DATABASES on every start.
     entrypoint: ["/bin/bash", "/usr/local/bin/mysql-master-entrypoint.sh"]
     # mysqld options:
     #   --log-bin                   write the binary log the replica reads
@@ -60,6 +64,11 @@ services:
     #   --plugin-load-add           clone plugin, lets the replica copy this
     #                               instance on its first start
     #   --read-only=OFF             accept writes
+    #   --lower-case-table-names=1  database and table names stored in
+    #                               lowercase and matched case-insensitively
+    #                               (MyApp -> myapp). Fixed when the data
+    #                               volume is initialized: changing it needs a
+    #                               new volume. Must match the replica
     command:
       - mysqld
       - --log-bin=mysql-bin
@@ -67,6 +76,7 @@ services:
       - --enforce-gtid-consistency=ON
       - --plugin-load-add=mysql_clone.so
       - --read-only=OFF
+      - --lower-case-table-names=1
 
     # --------------------------------------------------------------------------
     # Network

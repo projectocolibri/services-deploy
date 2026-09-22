@@ -10,7 +10,8 @@
 #                  this file
 # Variables:     POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_REPLICATION_USER,
 #                POSTGRES_REPLICATION_PASSWORD, POSTGRES_MONITOR_USER,
-#                POSTGRES_MONITOR_PASSWORD, POSTGRES_MAX_SLOT_WAL_KEEP_SIZE.
+#                POSTGRES_MONITOR_PASSWORD, POSTGRES_MAX_SLOT_WAL_KEEP_SIZE,
+#                POSTGRES_APP_USER, POSTGRES_APP_PASSWORD, POSTGRES_DATABASES.
 #                TZ from the root .env.dev.
 # ============================================================================
 
@@ -23,6 +24,9 @@ services:
     restart: always
     # Runs when COMPOSE_PROFILES (root .env) includes one of these.
     profiles: [primary, postgres-primary]
+    # tini as PID 1: forwards stop signals to PostgreSQL and reaps the
+    # background database creation task of the entrypoint wrapper.
+    init: true
 
     # --------------------------------------------------------------------------
     # Credentials
@@ -39,6 +43,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       # POSTGRES_PASSWORD: password of POSTGRES_USER. Required.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # POSTGRES_INITDB_ARGS: UTF-8 encoding with byte-order sorting for every
+      # database (the image's default is SQL_ASCII). Fixed when the data
+      # directory is initialized.
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
       # REPLICATION_USER: replication role created by init-master.sh.
       REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.
@@ -47,12 +55,20 @@ services:
       MONITOR_USER: ${POSTGRES_MONITOR_USER}
       # MONITOR_PASSWORD: password of MONITOR_USER.
       MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD}
+      # APP_USER: application role created on every start if missing, owner
+      # of DATABASES (postgres-master-entrypoint.sh).
+      APP_USER: ${POSTGRES_APP_USER:-}
+      # APP_PASSWORD: password of APP_USER.
+      APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      # DATABASES: databases created on every start if missing.
+      DATABASES: ${POSTGRES_DATABASES:-}
 
     # --------------------------------------------------------------------------
     # Startup
     # --------------------------------------------------------------------------
     # Wrapper around the image entrypoint: promotes the data if it was a
-    # replica (removes standby.signal).
+    # replica (removes standby.signal), and creates APP_USER and the
+    # databases in DATABASES on every start.
     entrypoint: ["/bin/bash", "/usr/local/bin/postgres-master-entrypoint.sh"]
     # Server settings (-c name=value):
     #   wal_level=replica          write enough WAL for streaming replication
