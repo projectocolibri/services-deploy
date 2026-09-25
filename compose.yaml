@@ -37,7 +37,8 @@ include:
   # Gateway: WireGuard VPN (private access) and nginx (public web apps).
   - path: ./gateway/compose.yaml
 
-  # Monitoring: PMM Server, PMM client with cAdvisor, and Dozzle for logs.
+  # Monitoring: PMM Server, PMM client with cAdvisor, Dozzle for logs and
+  # Portainer for container management.
   - path: ./monitoring/compose.yaml
 
   # MySQL: Percona Server primary, read-only replica and phpMyAdmin.

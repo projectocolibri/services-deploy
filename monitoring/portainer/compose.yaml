@@ -1,0 +1,74 @@
+# ============================================================================
+# Container management (Portainer CE)
+#
+# Purpose:       Web UI to inspect and manage containers, images, volumes and
+#                networks: start, stop, restart, exec into a container, view
+#                stats and logs.
+# Role:          Talks to Docker through the socket, so it has full control of
+#                this server's Docker (root-equivalent). Reachable only through
+#                the VPN at https://portainer:9443 (self-signed certificate).
+#                The deployment itself is still managed with `docker compose`
+#                from this repository: containers changed or created in
+#                Portainer are replaced by the next `docker compose up -d`.
+# Prerequisites: - Docker socket on the host at /var/run/docker.sock
+#                - PORTAINER_ADMIN_PASSWORD set before the first start
+#                  (12+ characters)
+# Variables:     PORTAINER_ADMIN_PASSWORD.
+#                TZ from the root .env.dev.
+# ============================================================================
+
+services:
+  portainer:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    image: portainer/portainer-ce:lts
+    restart: always
+    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    profiles: [monitoring, portainer]
+
+    # --------------------------------------------------------------------------
+    # Server settings
+    # --------------------------------------------------------------------------
+    # --admin-password-file: creates the "admin" user on the first start, so
+    #   the UI never shows the open "create administrator" page. Later changes
+    #   to the password are made in the UI; the file is ignored once the user
+    #   exists.
+    # -H: manage this server's Docker through the mounted socket.
+    command:
+      - --admin-password-file=/run/portainer/admin-password
+      - -H
+      - unix:///var/run/docker.sock
+    environment:
+      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # The UI shows times in the browser's time zone.
+      TZ: ${TZ:-Etc/UTC}
+    configs:
+      - source: portainer-admin-password
+        target: /run/portainer/admin-password
+
+    # --------------------------------------------------------------------------
+    # Docker access and storage
+    # --------------------------------------------------------------------------
+    # No published ports: reachable only through the VPN (9443, HTTPS).
+    volumes:
+      # Docker socket: read/write, Portainer manages containers through it.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Portainer state: users, settings, environments.
+      - portainer-data:/data
+
+# ----------------------------------------------------------------------------
+# Configs
+# ----------------------------------------------------------------------------
+configs:
+  # PORTAINER_ADMIN_PASSWORD: initial password of the "admin" user.
+  portainer-admin-password:
+    content: ${PORTAINER_ADMIN_PASSWORD}
+
+# ----------------------------------------------------------------------------
+# Volumes
+# ----------------------------------------------------------------------------
+volumes:
+  # Portainer data. Deleting it resets users and settings (the admin user is
+  # recreated from PORTAINER_ADMIN_PASSWORD).
+  portainer-data:

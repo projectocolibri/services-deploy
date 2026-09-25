@@ -2,7 +2,7 @@
 
 Docker Compose deployment of shared infrastructure: MySQL (Percona Server) and
 PostgreSQL (Percona Distribution), each with a read-only replica, a VPN and an
-HTTP gateway, and monitoring (PMM and Dozzle). It also runs the company's apps:
+HTTP gateway, and monitoring (PMM, Dozzle and Portainer). It also runs the company's apps:
 Java services with their own JRE and Angular apps with server-side
 rendering.
 
@@ -24,7 +24,7 @@ is internal and reached through the VPN.
  ─────────────────┴──── internal network (NETWORK_SUBNET) ─┴──────────────────
   mysql-primary     ── replication ────►  mysql-replica     (read only)
   postgres-primary  ── streaming ──────►  postgres-replica  (read only)
-  PMM, Dozzle, admin panels
+  PMM, Dozzle, Portainer, admin panels
 ```
 
 ## Requirements
@@ -71,6 +71,7 @@ monitoring/
   pmm/                       PMM Server and custom dashboards
   client/                    PMM client and cAdvisor
   logs/                      Dozzle
+  portainer/                 Portainer (container management)
 databases/
   mysql/
     master/                  primary, read/write (mysql-db)
@@ -104,7 +105,7 @@ its root `.env` differs.
 | `vpn-host` | WireGuard server (on the server with the primaries) |
 | `vpn-client` | WireGuard peer of another server's VPN host |
 | `http` | nginx gateway |
-| `monitoring` | PMM Server, PMM client + cAdvisor, Dozzle (or only `pmm`, `metrics`, `logs`) |
+| `monitoring` | PMM Server, PMM client + cAdvisor, Dozzle, Portainer (or only `pmm`, `metrics`, `logs`, `portainer`) |
 | `primary` | MySQL and PostgreSQL primaries |
 | `replica` | MySQL and PostgreSQL replicas |
 | `backup` | Backups of the replicas and log streams (next to the replicas) |
@@ -170,7 +171,7 @@ Production values to set:
 | `gateway` | `VPN_HOST`, `VPN_PEERS` |
 | `databases/mysql` | `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_USER_PASSWORD`, `MYSQL_REPLICATION_PASSWORD`, `MYSQL_MONITOR_PASSWORD`, `MYSQL_DATABASES` |
 | `databases/postgres` | `POSTGRES_PASSWORD`, `POSTGRES_REPLICATION_PASSWORD`, `POSTGRES_MONITOR_PASSWORD`, `POSTGRES_APP_USER`, `POSTGRES_APP_PASSWORD`, `POSTGRES_DATABASES`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
-| `monitoring` | `PMM_ADMIN_PASSWORD`, `MONITOR_MYSQL_PASSWORD`, `MONITOR_POSTGRES_PASSWORD`, `SMTP_*` |
+| `monitoring` | `PMM_ADMIN_PASSWORD`, `PORTAINER_ADMIN_PASSWORD`, `MONITOR_MYSQL_PASSWORD`, `MONITOR_POSTGRES_PASSWORD`, `SMTP_*` |
 
 The `MONITOR_*` credentials must match the `*_MONITOR_*` values of the database
 stacks.
@@ -184,6 +185,8 @@ services:
     ports: ["127.0.0.1:8443:8443"]
   dozzle:
     ports: ["127.0.0.1:8888:8080"]
+  portainer:
+    ports: ["127.0.0.1:9443:9443"]
 ```
 
 ## Gateway
@@ -452,11 +455,17 @@ The Dockerfile copies `source/` to `/app` and runs `node server/server.mjs`
 |---|---|---|
 | **PMM** | Server resources, MySQL / PostgreSQL dashboards and replication, Query Analytics, per-container metrics, alerts | `https://pmm-server:8443` (user `admin`) |
 | **Dozzle** | Live logs of every container | `http://dozzle:8080` |
+| **Portainer** | Containers, images, volumes and networks; start / stop / restart, console, stats | `https://portainer:9443` (user `admin`) |
 
 - The PMM client registers the server as a node named after its hostname, and
   its cAdvisor as `cadvisor-<hostname>`.
 - With `MONITOR_DATABASES=true` it also registers whichever databases are
   running. Restart `pmm-client` to register a database started later.
+- Portainer has full control of Docker on the server. Use it to inspect and
+  operate containers; change the deployment itself in this repository, since
+  `docker compose up -d` replaces containers edited in Portainer. The `admin`
+  password comes from `PORTAINER_ADMIN_PASSWORD` on the first start only
+  (at least 12 characters); later, change it in the UI.
 
 ### Custom dashboards
 

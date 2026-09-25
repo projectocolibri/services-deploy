@@ -7,10 +7,11 @@
 #                - client: PMM client and cAdvisor: registers this server,
 #                          its containers and the databases in PMM
 #                - logs:   Dozzle: live logs of every container
+#                - portainer: Portainer: container management UI
 #                All internal, reachable only through the VPN.
 # Prerequisites: - monitoring/.env must exist (may be empty)
-#                - PMM_ADMIN_PASSWORD and the MONITOR_* credentials set in
-#                  monitoring/.env for production
+#                - PMM_ADMIN_PASSWORD, PORTAINER_ADMIN_PASSWORD and the
+#                  MONITOR_* credentials set in monitoring/.env for production
 # Variables:     Loaded from the env files below. See monitoring/.env.dev for
 #                the meaning and defaults of each variable.
 # ============================================================================
@@ -41,6 +42,16 @@ include:
   # Container logs (Dozzle)
   # --------------------------------------------------------------------------
   - path: ./logs/compose.yaml
+    env_file:
+      # Committed development defaults.
+      - ./.env.dev
+      # Local, uncommitted overrides and secrets.
+      - ./.env
+
+  # --------------------------------------------------------------------------
+  # Container management (Portainer)
+  # --------------------------------------------------------------------------
+  - path: ./portainer/compose.yaml
     env_file:
       # Committed development defaults.
       - ./.env.dev
