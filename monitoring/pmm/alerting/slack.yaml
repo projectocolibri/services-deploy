@@ -1,0 +1,32 @@
+# ============================================================================
+# Slack contact point (Grafana alerting provisioning)
+#
+# Purpose:       Creates the "Slack" contact point in PMM's Grafana, so alerts
+#                can be sent to a Slack channel.
+# Role:          Installed into Grafana's provisioning directory by
+#                ../pmm-entrypoint.sh only when ALERT_SLACK_ENABLED=true.
+#                Grafana applies it on start. Provisioned contact points are
+#                read-only in the UI: change them in .env and restart
+#                pmm-server. Which alerts reach Slack is decided in the PMM UI
+#                (Alerting > Notification policies), as for email.
+# Prerequisites: A Slack incoming webhook (Slack app > Incoming Webhooks),
+#                which posts to the channel chosen when it was created.
+# Variables:     SLACK_WEBHOOK_URL, expanded by Grafana from the pmm-server
+#                environment (never written into this file).
+# ============================================================================
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    # Name shown in Alerting > Contact points and chosen in policies.
+    name: Slack
+    receivers:
+      # Fixed uid, so restarts update this receiver instead of adding one.
+      - uid: slack
+        type: slack
+        settings:
+          # Incoming webhook URL (secret), from the environment.
+          url: ${SLACK_WEBHOOK_URL}
+        # Also notify when the alert resolves.
+        disableResolveMessage: false

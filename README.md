@@ -63,7 +63,7 @@ gateway/
   vpn/client/                WireGuard peer for replica-only servers
   http/                      nginx for public apps (conf.d/, certs/)
 monitoring/
-  pmm/                       PMM Server and custom dashboards
+  pmm/                       PMM Server, custom dashboards, Slack alerts
   client/                    PMM client and cAdvisor
   logs/                      Dozzle
   portainer/                 Portainer (container management)
@@ -170,7 +170,7 @@ Production values to set in `.env`:
 | Gateway | `VPN_HOST`, `VPN_PEERS` |
 | MySQL | `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_USER_PASSWORD`, `MYSQL_REPLICATION_PASSWORD`, `MYSQL_MONITOR_PASSWORD`, `MYSQL_DATABASES` |
 | PostgreSQL | `POSTGRES_PASSWORD`, `POSTGRES_REPLICATION_PASSWORD`, `POSTGRES_MONITOR_PASSWORD`, `POSTGRES_APP_USER`, `POSTGRES_APP_PASSWORD`, `POSTGRES_DATABASES`, `POSTGRES_ADMIN_EMAIL`, `POSTGRES_ADMIN_PASSWORD` |
-| Monitoring | `PMM_ADMIN_PASSWORD`, `PORTAINER_ADMIN_PASSWORD`, `SMTP_*` |
+| Monitoring | `PMM_ADMIN_PASSWORD`, `PORTAINER_ADMIN_PASSWORD`, `SMTP_*`, `SLACK_WEBHOOK_URL` |
 | Backups | `MYSQL_BACKUP_DIR`, `POSTGRES_BACKUP_DIR` |
 
 The PMM client connects to the databases with the same `MYSQL_MONITOR_*` and
@@ -479,9 +479,21 @@ so edit the JSON files rather than the UI.
 
 ### Alerts
 
-Configured in the PMM UI (**Alerting**): contact points (email needs
-`ALERT_EMAIL_ENABLED=true` and the `SMTP_*` settings), alert rules and
-notification policies. They are stored in the `pmm-data` volume.
+Configured in the PMM UI (**Alerting**): contact points, alert rules and
+notification policies. They are stored in the `pmm-data` volume. Two channels
+are set up from `.env`:
+
+| Channel | `.env` | Result |
+|---|---|---|
+| Email | `ALERT_EMAIL_ENABLED=true` and `SMTP_*` | PMM can send email; create an email contact point in the UI |
+| Slack | `ALERT_SLACK_ENABLED=true` and `SLACK_WEBHOOK_URL` | Contact point **Slack** created on start (`monitoring/pmm/alerting/slack.yaml`) |
+
+Restart `pmm-server` after changing them (`docker compose up -d pmm-server`).
+Then choose which alerts go where in **Alerting → Notification policies**, and
+use **Test** on the contact point to check it. The Slack contact point is
+read-only in the UI. Before setting `ALERT_SLACK_ENABLED=false`, remove Slack
+from the notification policies; otherwise it is kept and `pmm-server` logs a
+warning.
 
 Cap Docker log size on the server in `/etc/docker/daemon.json`:
 

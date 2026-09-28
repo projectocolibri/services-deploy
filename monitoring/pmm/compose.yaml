@@ -9,8 +9,10 @@
 #                Reachable only through the VPN at https://pmm-server:8443.
 # Prerequisites: - 2+ CPU cores and 4+ GB RAM, plus disk for PMM_DATA_RETENTION
 #                - PMM_ADMIN_PASSWORD set before the first start
+#                - pmm-entrypoint.sh and alerting/slack.yaml next to this file
 # Variables:     PMM_ADMIN_PASSWORD, PMM_DATA_RETENTION, ALERT_EMAIL_ENABLED,
-#                SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM.
+#                SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM,
+#                ALERT_SLACK_ENABLED, SLACK_WEBHOOK_URL.
 #                TZ from .env.
 # ============================================================================
 
@@ -52,8 +54,23 @@ services:
       # GF_SMTP_FROM_ADDRESS: sender address of alert emails.
       GF_SMTP_FROM_ADDRESS: ${SMTP_FROM}
 
+      # --- Alert Slack (Grafana contact point "Slack") ----------------------
+      # ALERT_SLACK_ENABLED: "true" creates the contact point, anything else
+      # removes it (read by pmm-entrypoint.sh). Default: false.
+      ALERT_SLACK_ENABLED: ${ALERT_SLACK_ENABLED:-false}
+      # SLACK_WEBHOOK_URL: incoming webhook, expanded by Grafana from this
+      # environment into alerting/slack.yaml.
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+
     # --------------------------------------------------------------------------
-    # Storage and custom dashboards
+    # Startup
+    # --------------------------------------------------------------------------
+    # Installs or removes the Slack contact point, then runs the image
+    # entrypoint (/opt/entrypoint.sh).
+    entrypoint: ["/bin/bash", "/usr/local/bin/pmm-entrypoint.sh"]
+
+    # --------------------------------------------------------------------------
+    # Storage, custom dashboards and alerting
     # --------------------------------------------------------------------------
     # No published ports: reachable only through the VPN.
     volumes:
@@ -64,6 +81,10 @@ services:
       # without a restart. Percona's own dashboards in the same tree are
       # overwritten on every start, which is why ours are separate files.
       - ./dashboards/Custom:/usr/share/percona-dashboards/panels/pmm-app/dist/dashboards/Custom:ro
+      # Alerting provisioning files, installed by the entrypoint wrapper.
+      - ./alerting:/etc/pmm-alerting:ro
+      # Entrypoint wrapper.
+      - ./pmm-entrypoint.sh:/usr/local/bin/pmm-entrypoint.sh:ro
 
     # --------------------------------------------------------------------------
     # Health check
