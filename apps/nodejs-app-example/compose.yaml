@@ -1,0 +1,44 @@
+# ============================================================================
+# Node.js app example
+#
+# Purpose:       Runs the Node.js application in ./source.
+# Role:          Internal service on port 3000: published through the HTTP
+#                gateway (gateway/http/conf.d/<app>.conf with
+#                proxy_pass http://nodejs-app-example:3000), or reached
+#                through the VPN at http://nodejs-app-example:3000.
+#                To deploy a new version, replace the files and run
+#                `docker compose up -d --build nodejs-app-example`.
+# Prerequisites: - ./source: the app with package.json and package-lock.json
+#                  (not committed); dependencies are installed in the image
+#                - The app listens on process.env.PORT, on all interfaces
+# Variables:     TZ from .env.
+# ============================================================================
+
+services:
+  nodejs-app-example:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    build:
+      context: .
+    restart: always
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [nodejs-app-example]
+    # tini as PID 1: forwards stop signals to node.
+    init: true
+
+    # --------------------------------------------------------------------------
+    # HTTP port
+    # --------------------------------------------------------------------------
+    # Port the app listens on (PORT in the Dockerfile). Exposed to the
+    # internal network only, not published on the host: the HTTP gateway
+    # reaches it at http://nodejs-app-example:3000.
+    expose:
+      - "3000"
+
+    # --------------------------------------------------------------------------
+    # Time zone
+    # --------------------------------------------------------------------------
+    environment:
+      # TZ: time zone of the app (logs, dates), from .env. Default: Etc/UTC.
+      TZ: ${TZ:-Etc/UTC}

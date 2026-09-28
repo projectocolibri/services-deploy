@@ -1,0 +1,17 @@
+# ============================================================================
+# Docker build context exclusions (nodejs-app-example)
+#
+# Purpose:       Keeps placeholders, local dependencies and local settings out
+#                of the image.
+# Role:          source/ is copied into the image; its .gitkeep file only
+#                keeps the empty folder in Git. node_modules is installed in
+#                the image (for Linux), so a copy from a developer machine is
+#                never used. Local .env files and Git data are not needed.
+# Prerequisites: None.
+# Variables:     None.
+# ============================================================================
+
+source/.gitkeep
+source/node_modules
+source/.env*
+source/.git

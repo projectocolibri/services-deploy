@@ -81,6 +81,7 @@ databases/
 apps/
   java-service-example/      Java app export + Linux JRE (source/, jre/)
   angular-app-example/       Angular SSR build run by Node.js (source/)
+  nodejs-app-example/        Node.js app, dependencies installed in the image (source/)
 ```
 
 Every folder with a `compose.yaml` is a stack. Stacks list their sub-stacks
@@ -113,6 +114,7 @@ those. Every server runs the same committed files; only its `.env` differs.
 | | `postgres-admin` | pgAdmin |
 | Apps | `java-service-example` | Java service example |
 | | `angular-app-example` | Angular SSR app example |
+| | `nodejs-app-example` | Node.js app example |
 
 The apps are not in the default list: add them where they run, e.g.
 `COMPOSE_PROFILES=http,java-service-example`.
@@ -464,6 +466,27 @@ The Dockerfile copies `source/` to `/app` and runs `node server/server.mjs`
   `localhost,angular-app-example`.
 - `NG_TRUST_PROXY_HEADERS=x-forwarded-proto` lets pages rendered behind the
   HTTP gateway know they are served over HTTPS.
+
+### Node.js app (`nodejs-app-example`)
+
+1. Copy the app into `apps/nodejs-app-example/source/`: `package.json`,
+   `package-lock.json` and the code, ready to run (for TypeScript or bundled
+   apps, the compiled output). `node_modules` is not needed.
+2. `docker compose up -d --build nodejs-app-example`.
+3. Publish it: in `gateway/http/conf.d/<app>.conf` use
+   `proxy_pass http://nodejs-app-example:3000`.
+
+The Dockerfile installs the production dependencies with
+`npm ci --omit=dev` (for Linux, with build tools for native addons in a
+separate stage), copies `source/` to `/app` and runs `node .` (Node.js 24),
+which starts the file in `"main"` of `package.json`.
+
+- The app must listen on `process.env.PORT` (3000) on all interfaces: a
+  server bound to `localhost` is unreachable from other containers.
+- `NODE_ENV=production`. Other settings go in the Dockerfile's `ENV`, like the
+  other examples; a local `.env` in `source/` is not copied into the image.
+- `devDependencies` are not installed: anything needed at runtime belongs in
+  `dependencies`.
 
 ## Monitoring
 

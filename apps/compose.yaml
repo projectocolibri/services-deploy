@@ -8,6 +8,8 @@
 #                - java-service-example: Java application exported for
 #                  Linux, run with its own JRE
 #                - angular-app-example: Angular SSR build, run by Node.js
+#                - nodejs-app-example: Node.js app, dependencies installed
+#                  in the image
 #                New app: copy the example folder of the same type to
 #                apps/<app>, rename the service (and the Java launcher), and
 #                include it below.
@@ -29,3 +31,8 @@ include:
   # Angular app (SSR build run by Node.js)
   # --------------------------------------------------------------------------
   - path: ./angular-app-example/compose.yaml
+
+  # --------------------------------------------------------------------------
+  # Node.js app (package.json + package-lock.json)
+  # --------------------------------------------------------------------------
+  - path: ./nodejs-app-example/compose.yaml
