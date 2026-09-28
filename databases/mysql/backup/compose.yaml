@@ -16,12 +16,12 @@
 #                - The primary reachable as mysql-primary (same server, or
 #                  through the VPN client and VPN_DNS_IP)
 #                - Enough disk in MYSQL_BACKUP_DIR for about
-#                  MYSQL_BACKUP_RETENTION_DAYS + 1 compressed backups plus the
+#                  every backup kept within MYSQL_BACKUP_RETENTION plus the
 #                  binary logs; ideally a separate disk
 # Variables:     MYSQL_ROOT_PASSWORD, MYSQL_REPLICATION_USER,
 #                MYSQL_REPLICATION_PASSWORD, MYSQL_REPLICA_PRIMARY_HOST,
-#                MYSQL_BACKUP_DIR, MYSQL_BACKUP_TIME,
-#                MYSQL_BACKUP_RETENTION_DAYS, MYSQL_BACKUP_VERIFY,
+#                MYSQL_BACKUP_DIR, MYSQL_BACKUP_SCHEDULE,
+#                MYSQL_BACKUP_RETENTION, MYSQL_BACKUP_VERIFY,
 #                MYSQL_BACKUP_THREADS, MYSQL_BINLOG_SERVER_ID.
 #                TZ and VPN_DNS_IP from .env.
 # ============================================================================
@@ -45,17 +45,17 @@ services:
     # --------------------------------------------------------------------------
     environment:
       # TZ: container time zone. Default: Etc/UTC. The XtraBackup image has no
-      # time zone data, so BACKUP_TIME and logs are always in UTC.
+      # time zone data, so BACKUP_SCHEDULE and logs are always in UTC.
       TZ: ${TZ:-Etc/UTC}
       # BACKUP_SOURCE_HOST: replica to back up (on this server), also asked
       # where the primary's binary log is.
       BACKUP_SOURCE_HOST: mysql-replica
       # MYSQL_ROOT_PASSWORD: root password of the replica.
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      # BACKUP_TIME: daily start time, HH:MM. Default: 02:00.
-      BACKUP_TIME: ${MYSQL_BACKUP_TIME:-02:00}
-      # BACKUP_RETENTION_DAYS: days to keep backups. Default: 7.
-      BACKUP_RETENTION_DAYS: ${MYSQL_BACKUP_RETENTION_DAYS:-7}
+      # BACKUP_SCHEDULE: cron expression of the full backups.
+      BACKUP_SCHEDULE: ${MYSQL_BACKUP_SCHEDULE:-0 2 * * *}
+      # BACKUP_RETENTION: how long backups are kept (h, d, w, M, y). Default: 7d.
+      BACKUP_RETENTION: ${MYSQL_BACKUP_RETENTION:-7d}
       # BACKUP_VERIFY: "true" decompresses and prepares a copy of every backup.
       BACKUP_VERIFY: ${MYSQL_BACKUP_VERIFY:-true}
       # BACKUP_THREADS: parallel copy and compression threads. Default: 2.
@@ -99,8 +99,8 @@ services:
     # --------------------------------------------------------------------------
     # Health check
     # --------------------------------------------------------------------------
-    # Healthy while the binary log stream runs and a backup is running or the
-    # newest backup is under 26 hours old.
+    # Healthy while the binary log stream runs, the last backup did not fail
+    # and the next scheduled one is not over an hour overdue.
     healthcheck:
       test: ["CMD", "/bin/bash", "/usr/local/bin/mysql-backup.sh", "health"]
       interval: 1m

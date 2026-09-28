@@ -321,16 +321,22 @@ primaries' logs are streamed continuously for point-in-time recovery.
 | Verification | Decompress and prepare a copy after every backup | `pg_verifybackup` against the manifest |
 | Point in time | Binary logs streamed from the primary (in the background, same container) | WAL streamed from the primary through a replication slot (in the background, same container) |
 | Directory | `MYSQL_BACKUP_DIR` (default `./backups/mysql`): `full/`, `binlog/` | `POSTGRES_BACKUP_DIR` (default `./backups/postgres`): `base/`, `wal/` |
-| Schedule | `MYSQL_BACKUP_TIME` (UTC), default 02:00 | `POSTGRES_BACKUP_TIME` (`TZ`), default 02:30 |
+| Schedule (cron) | `MYSQL_BACKUP_SCHEDULE` (UTC), default `0 2 * * *` | `POSTGRES_BACKUP_SCHEDULE` (`TZ`), default `30 2 * * *` |
+| Retention | `MYSQL_BACKUP_RETENTION`, default `7d` | `POSTGRES_BACKUP_RETENTION`, default `7d` |
 
 - A backup is written to `<timestamp>.partial` and renamed only when complete
   and verified; failures leave `<timestamp>.failed.log`. Without any backup
-  (first start, or the first one failed) a backup runs at once and is retried
-  hourly.
-- Retention (`*_BACKUP_RETENTION_DAYS`, default 7) removes older backups but
-  never the newest, and keeps logs back to the oldest remaining backup.
-- Health checks: a backup container turns unhealthy when its log stream stops
-  or the newest backup is over 26 hours old.
+  (first start) a backup runs at once; a failed backup is retried within the
+  hour.
+- Schedule: standard 5-field cron (`minute hour day month weekday`), e.g.
+  `0 */6 * * *` every 6 hours or `0 3 * * 0` on Sundays. No cron daemon: the
+  backup container computes the next run itself.
+- Retention (`*_BACKUP_RETENTION`: `36h`, `7d`, `2w`, `1M`, `1y`) removes older
+  backups but never the newest. Logs are kept only back to the oldest
+  remaining backup, since older ones cannot be replayed; logs moved aside
+  after a primary change are removed once past the retention too.
+- Health checks: a backup container turns unhealthy when its log stream stops,
+  the last backup failed, or a scheduled backup is over an hour overdue.
 - New primary: the stream records the primary's identity (MySQL
   `server_uuid`, PostgreSQL system identifier). If the primary's data volume
   is recreated, the old logs are moved to `binlog.<id>.<date>` /

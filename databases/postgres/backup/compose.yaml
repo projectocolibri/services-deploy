@@ -19,11 +19,11 @@
 #                  the slot cannot fill the primary's disk while this server is
 #                  away
 #                - Enough disk in POSTGRES_BACKUP_DIR for about
-#                  POSTGRES_BACKUP_RETENTION_DAYS + 1 compressed backups plus
+#                  every backup kept within POSTGRES_BACKUP_RETENTION plus
 #                  the WAL; ideally a separate disk
 # Variables:     POSTGRES_REPLICATION_USER, POSTGRES_REPLICATION_PASSWORD,
 #                POSTGRES_REPLICA_PRIMARY_HOST, POSTGRES_BACKUP_DIR,
-#                POSTGRES_BACKUP_TIME, POSTGRES_BACKUP_RETENTION_DAYS,
+#                POSTGRES_BACKUP_SCHEDULE, POSTGRES_BACKUP_RETENTION,
 #                POSTGRES_BACKUP_VERIFY, POSTGRES_WAL_SLOT.
 #                TZ and VPN_DNS_IP from .env.
 # ============================================================================
@@ -45,7 +45,7 @@ services:
     # Backup and stream settings
     # --------------------------------------------------------------------------
     environment:
-      # TZ: time zone of BACKUP_TIME and log timestamps. Default: Etc/UTC.
+      # TZ: time zone of BACKUP_SCHEDULE and log timestamps. Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
       # BACKUP_SOURCE_HOST: standby to back up (on this server).
       BACKUP_SOURCE_HOST: postgres-replica
@@ -57,10 +57,10 @@ services:
       REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
       # WAL_SLOT: replication slot on the primary. Default: backup_wal.
       WAL_SLOT: ${POSTGRES_WAL_SLOT:-backup_wal}
-      # BACKUP_TIME: daily start time, HH:MM. Default: 02:30.
-      BACKUP_TIME: ${POSTGRES_BACKUP_TIME:-02:30}
-      # BACKUP_RETENTION_DAYS: days to keep backups. Default: 7.
-      BACKUP_RETENTION_DAYS: ${POSTGRES_BACKUP_RETENTION_DAYS:-7}
+      # BACKUP_SCHEDULE: cron expression of the base backups.
+      BACKUP_SCHEDULE: ${POSTGRES_BACKUP_SCHEDULE:-30 2 * * *}
+      # BACKUP_RETENTION: how long backups are kept (h, d, w, M, y). Default: 7d.
+      BACKUP_RETENTION: ${POSTGRES_BACKUP_RETENTION:-7d}
       # BACKUP_VERIFY: "true" checks every backup with pg_verifybackup.
       BACKUP_VERIFY: ${POSTGRES_BACKUP_VERIFY:-true}
 
@@ -91,8 +91,8 @@ services:
     # --------------------------------------------------------------------------
     # Health check
     # --------------------------------------------------------------------------
-    # Healthy while the WAL stream runs and a backup is running or the newest
-    # backup is under 26 hours old.
+    # Healthy while the WAL stream runs, the last backup did not fail and the
+    # next scheduled one is not over an hour overdue.
     healthcheck:
       test: ["CMD", "/bin/bash", "/usr/local/bin/postgres-backup.sh", "health"]
       interval: 1m
