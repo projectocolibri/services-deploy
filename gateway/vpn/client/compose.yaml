@@ -17,8 +17,7 @@
 #                  (the client refuses to start on overlapping routes)
 #                - Outbound UDP to the VPN host (no inbound port needed)
 # Variables:     VPN_CLIENT_INTERFACE, VPN_CLIENT_KEEPALIVE,
-#                VPN_CLIENT_ALLOWED_IPS from gateway/.env.dev and gateway/.env;
-#                TZ from the root .env.dev.
+#                VPN_CLIENT_ALLOWED_IPS and TZ from .env.
 # ============================================================================
 
 services:
@@ -31,7 +30,7 @@ services:
     # default route when a tunnel fails (fatal on the host network).
     image: lscr.io/linuxserver/wireguard:1.0.20260223-r0-ls122
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
     profiles: [vpn-client]
 
     # --------------------------------------------------------------------------
@@ -47,7 +46,7 @@ services:
     # Tunnel settings
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # TZ: container time zone, from .env. Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
       # VPN_CLIENT_INTERFACE: name of the WireGuard interface on the host.
       # Default: wg-services.

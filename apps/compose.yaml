@@ -11,12 +11,12 @@
 #                New app: copy the example folder of the same type to
 #                apps/<app>, rename the service (and the Java launcher), and
 #                include it below.
-#                Each app runs only when COMPOSE_PROFILES (root .env) includes
-#                apps (every app) or its service name.
+#                Each app runs only when COMPOSE_PROFILES (.env) includes
+#                its service name (its profile).
 # Prerequisites: - The export in each app's source/ (not committed)
 #                - The Linux JRE in java-service-example/jre/ (not committed)
 # Variables:     None: settings are fixed in each app's Dockerfile. TZ comes
-#                from the root .env.dev.
+#                from .env.
 # ============================================================================
 
 include:

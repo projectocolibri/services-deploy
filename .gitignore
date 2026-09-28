@@ -3,10 +3,10 @@
 #
 # Purpose:       Keeps secrets, generated keys, local overrides and editor
 #                files out of version control.
-# Role:          Every stack commits its development defaults (.env.dev) and
-#                keeps real values in an uncommitted .env. VPN keys, client
-#                configs and TLS certificates are generated or installed on the
-#                server and must never be committed.
+# Role:          The settings template (.env.example) is committed; each
+#                server keeps its real values in an uncommitted .env. VPN
+#                keys, client configs and TLS certificates are generated or
+#                installed on the server and must never be committed.
 # Prerequisites: None.
 # Variables:     None.
 # ============================================================================
@@ -14,8 +14,8 @@
 # ----------------------------------------------------------------------------
 # Local environment overrides and secrets
 # ----------------------------------------------------------------------------
-# Per-stack .env files hold production passwords and host-specific values.
-# Compose expects them to exist (they may be empty).
+# The root .env holds this server's profiles, production passwords and
+# host-specific values. Created from .env.example.
 .env
 
 # ----------------------------------------------------------------------------

@@ -10,7 +10,7 @@
 #                - Docker log rotation configured on the host, since Dozzle
 #                  shows what Docker keeps
 # Variables:     DOZZLE_MODE, DOZZLE_REMOTE_AGENTS.
-#                TZ from the root .env.dev.
+#                TZ from .env.
 # ============================================================================
 
 services:
@@ -20,8 +20,8 @@ services:
     # --------------------------------------------------------------------------
     image: amir20/dozzle:v11.0.1
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [monitoring, logs]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [logs]
 
     # --------------------------------------------------------------------------
     # Mode and settings
@@ -30,7 +30,7 @@ services:
     # port 7007. Default: empty.
     command: ${DOZZLE_MODE:-}
     environment:
-      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # TZ: container time zone, from .env. Default: Etc/UTC.
       # The UI shows times in the browser's time zone.
       TZ: ${TZ:-Etc/UTC}
       # DOZZLE_NO_ANALYTICS: "true" disables anonymous usage reporting.

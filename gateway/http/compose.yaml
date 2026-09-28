@@ -9,8 +9,7 @@
 # Prerequisites: - TCP ports HTTP_PORT and HTTPS_PORT open in the firewall
 #                - One conf.d/<app>.conf per app (see app.conf.example)
 #                - Certificates in certs/<domain>/fullchain.pem and privkey.pem
-# Variables:     HTTP_PORT, HTTPS_PORT from gateway/.env.dev and gateway/.env.
-#                TZ from the root .env.dev.
+# Variables:     HTTP_PORT, HTTPS_PORT and TZ from .env.
 # ============================================================================
 
 services:
@@ -20,15 +19,15 @@ services:
     # --------------------------------------------------------------------------
     image: nginx:1.28-alpine
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
     profiles: [http]
 
     # --------------------------------------------------------------------------
     # Time zone
     # --------------------------------------------------------------------------
     environment:
-      # TZ: time zone of access and error log timestamps, from the root
-      # .env.dev. Default: Etc/UTC.
+      # TZ: time zone of access and error log timestamps, from .env.
+      # Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
 
     # --------------------------------------------------------------------------

@@ -15,10 +15,9 @@
 #                  3. replays the binary logs up to TARGET_TIME (UTC); without
 #                     TARGET_TIME, up to the last copied event
 # Prerequisites: - bash and docker on the host (Linux, or Git Bash on Windows)
-#                - Backups in BACKUP_DIR (full/ and binlog/)
-#                - MYSQL_ROOT_PASSWORD in the environment, or in
-#                  databases/mysql/.env or .env.dev (the backup keeps the
-#                  replica's root password)
+#                - Backups in MYSQL_BACKUP_DIR (full/ and binlog/)
+#                - MYSQL_ROOT_PASSWORD in the environment, or in the root
+#                  .env (the backup keeps the replica's root password)
 #
 # Usage:
 #   databases/mysql/backup/mysql-restore.sh ["YYYY-MM-DD HH:MM:SS"]
@@ -29,16 +28,13 @@
 # Variables:
 #   TARGET_TIME          (arg 1) stop replaying before this UTC time.
 #                        Default: empty (replay everything)
-#   MYSQL_BACKUP_DIR     (env or databases/mysql/.env, .env.dev) MySQL backup
-#                        directory; relative to this script's directory
-#   BACKUP_DIR           (env or root .env, .env.dev) global backup directory,
-#                        used as BACKUP_DIR/mysql when MYSQL_BACKUP_DIR is unset.
-#                        Default when both are unset: ./backups/mysql next to
-#                        this script (the same rule as compose.yaml)
+#   MYSQL_BACKUP_DIR     (env or root .env) MySQL backup directory; relative
+#                        to this script's directory. Default: ./backups/mysql
+#                        next to this script (the same rule as compose.yaml)
 #   RESTORE_NAME         (env) name of the temporary container and volume.
 #                        Default: mysql-restore
 #   MYSQL_ROOT_PASSWORD  (env) root password of the backed-up replica. Default:
-#                        read from databases/mysql/.env, then .env.dev
+#                        read from the root .env
 #   MSYS_NO_PATHCONV     (env, exported) stops Git Bash from rewriting paths
 #   script_dir, stack_dir, root_dir
 #                        (local) this script's directory, the MySQL stack, the
@@ -72,19 +68,16 @@ setting() {
     echo "${value}"
 }
 
-# Same rule as compose.yaml: MYSQL_BACKUP_DIR, else BACKUP_DIR/mysql, else
-# ./backups/mysql; relative paths are relative to this script's directory.
-backup_dir="$(setting MYSQL_BACKUP_DIR "${stack_dir}/.env" "${stack_dir}/.env.dev")"
-if [ -z "${backup_dir}" ]; then
-    backup_dir="$(setting BACKUP_DIR "${root_dir}/.env" "${root_dir}/.env.dev")"
-    backup_dir="${backup_dir:-./backups}/mysql"
-fi
+# Same rule as compose.yaml: MYSQL_BACKUP_DIR, else ./backups/mysql; relative
+# paths are relative to this script's directory.
+backup_dir="$(setting MYSQL_BACKUP_DIR "${root_dir}/.env")"
+backup_dir="${backup_dir:-./backups/mysql}"
 case "${backup_dir}" in
     /* | [A-Za-z]:*) ;;
     *) backup_dir="${script_dir}/${backup_dir#./}" ;;
 esac
 
-password="$(setting MYSQL_ROOT_PASSWORD "${stack_dir}/.env" "${stack_dir}/.env.dev")"
+password="$(setting MYSQL_ROOT_PASSWORD "${root_dir}/.env")"
 
 log() {
     echo "[mysql-restore] $*"

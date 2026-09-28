@@ -15,7 +15,7 @@
 #                  3. starts the temporary server RESTORE_NAME, which replays
 #                     WAL up to TARGET_TIME (UTC), or all of it, and promotes
 # Prerequisites: - bash and docker on the host (Linux, or Git Bash on Windows)
-#                - Backups in BACKUP_DIR (base/ and wal/)
+#                - Backups in POSTGRES_BACKUP_DIR (base/ and wal/)
 #
 # Usage:
 #   databases/postgres/backup/postgres-restore.sh ["YYYY-MM-DD HH:MM:SS"]
@@ -26,12 +26,10 @@
 # Variables:
 #   TARGET_TIME       (arg 1) recover up to this UTC time. Default: empty
 #                     (recover everything received)
-#   POSTGRES_BACKUP_DIR (env or databases/postgres/.env, .env.dev) PostgreSQL
-#                     backup directory; relative to this script's directory
-#   BACKUP_DIR        (env or root .env, .env.dev) global backup directory,
-#                     used as BACKUP_DIR/postgres when POSTGRES_BACKUP_DIR is
-#                     unset. Default when both are unset: ./backups/postgres
-#                     next to this script (the same rule as compose.yaml)
+#   POSTGRES_BACKUP_DIR (env or root .env) PostgreSQL backup directory;
+#                     relative to this script's directory. Default:
+#                     ./backups/postgres next to this script (the same rule as
+#                     compose.yaml)
 #   RESTORE_NAME      (env) name of the temporary container and volume.
 #                     Default: postgres-restore
 #   MSYS_NO_PATHCONV  (env, exported) stops Git Bash from rewriting paths
@@ -66,14 +64,10 @@ setting() {
     echo "${value}"
 }
 
-# Same rule as compose.yaml: POSTGRES_BACKUP_DIR, else BACKUP_DIR/postgres,
-# else ./backups/postgres; relative paths are relative to this script's
-# directory.
-backup_dir="$(setting POSTGRES_BACKUP_DIR "${stack_dir}/.env" "${stack_dir}/.env.dev")"
-if [ -z "${backup_dir}" ]; then
-    backup_dir="$(setting BACKUP_DIR "${root_dir}/.env" "${root_dir}/.env.dev")"
-    backup_dir="${backup_dir:-./backups}/postgres"
-fi
+# Same rule as compose.yaml: POSTGRES_BACKUP_DIR, else ./backups/postgres;
+# relative paths are relative to this script's directory.
+backup_dir="$(setting POSTGRES_BACKUP_DIR "${root_dir}/.env")"
+backup_dir="${backup_dir:-./backups/postgres}"
 case "${backup_dir}" in
     /* | [A-Za-z]:*) ;;
     *) backup_dir="${script_dir}/${backup_dir#./}" ;;

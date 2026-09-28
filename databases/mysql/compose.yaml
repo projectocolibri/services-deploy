@@ -9,51 +9,29 @@
 #                           streaming, on the server running the replica
 #                The primary and replica are separate services with separate
 #                volumes; the replica clones the primary on its first start.
-# Prerequisites: - databases/mysql/.env must exist (may be empty)
-#                - Production passwords set in databases/mysql/.env
-# Variables:     Loaded from the env files below. See databases/mysql/.env.dev
-#                for the meaning and defaults of each variable.
+# Prerequisites: Production passwords set in the root .env.
+# Variables:     From the root .env, section "MySQL" (see .env.example for
+#                the meaning and defaults of each variable).
 # ============================================================================
 
 include:
   # --------------------------------------------------------------------------
   # Primary (read/write)
   # --------------------------------------------------------------------------
-  # Env files are layered in order; a key in ./.env overrides ./.env.dev.
   - path: ./master/compose.yaml
-    env_file:
-      # Committed development defaults.
-      - ./.env.dev
-      # Local, uncommitted overrides and secrets.
-      - ./.env
 
   # --------------------------------------------------------------------------
   # Replica (read-only)
   # --------------------------------------------------------------------------
   - path: ./replica/compose.yaml
-    env_file:
-      # Committed development defaults.
-      - ./.env.dev
-      # Local, uncommitted overrides and secrets.
-      - ./.env
 
   # --------------------------------------------------------------------------
   # Admin panel (phpMyAdmin)
   # --------------------------------------------------------------------------
   - path: ./admin/compose.yaml
-    env_file:
-      # Committed development defaults.
-      - ./.env.dev
-      # Local, uncommitted overrides and secrets.
-      - ./.env
 
   # --------------------------------------------------------------------------
   # Backups (XtraBackup + binary log streaming)
   # --------------------------------------------------------------------------
   # Include it on the server running the replica.
   - path: ./backup/compose.yaml
-    env_file:
-      # Committed development defaults.
-      - ./.env.dev
-      # Local, uncommitted overrides and secrets.
-      - ./.env

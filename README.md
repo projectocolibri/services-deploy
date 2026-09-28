@@ -39,9 +39,7 @@ is internal and reached through the VPN.
 git clone <repository> services-deploy
 cd services-deploy
 
-touch .env gateway/.env monitoring/.env databases/mysql/.env databases/postgres/.env
-
-export COMPOSE_ENV_FILES=.env.dev,.env
+cp .env.example .env
 
 docker compose up -d
 docker compose ps
@@ -49,19 +47,16 @@ docker compose ps
 
 The replicas clone their primary on the first start, so give them a minute
 (the MySQL replica restarts once after cloning). Before deploying to a real
-server, change the default passwords and set `VPN_HOST`.
+server, change the default passwords and set `VPN_HOST` in `.env`.
 
-`COMPOSE_ENV_FILES` makes Compose load the global `.env.dev` and `.env`. Set it
-once per machine instead of in every shell: add the `export` line to
-`~/.bashrc` on Linux, or run `setx COMPOSE_ENV_FILES ".env.dev,.env"` on
-Windows and open a new terminal. Without it, Compose stops with
-`project name must not be empty`.
+`.env` is the only settings file. Compose loads it automatically, so
+`COMPOSE_ENV_FILES` must not be set in the shell (if it is, Compose reads the
+files it names instead of `.env`).
 
 ## Repository layout
 
 ```
-.env.dev                     global: server roles, project name, network,
-                             backup directory, time zone
+.env.example                 every setting, documented (copy to .env)
 compose.yaml                 includes every stack, defines the network
 gateway/
   vpn/host/                  WireGuard VPN server (server with the primaries)
@@ -95,86 +90,91 @@ another stack: each one waits for what it needs by itself.
 
 ## Server roles
 
-Every service belongs to one or more Compose profiles. `COMPOSE_PROFILES` in the
-root `.env` lists the roles of **this** server, and `docker compose up -d`
-starts exactly those services. Every server runs the same committed files; only
-its root `.env` differs.
+Every service has its own Compose profile. `COMPOSE_PROFILES` in `.env` lists
+the services of **this** server, and `docker compose up -d` starts exactly
+those. Every server runs the same committed files; only its `.env` differs.
 
-| Profile | Services |
-|---|---|
-| `vpn-host` | WireGuard server (on the server with the primaries) |
-| `vpn-client` | WireGuard peer of another server's VPN host |
-| `http` | nginx gateway |
-| `monitoring` | PMM Server, PMM client + cAdvisor, Dozzle, Portainer (or only `pmm`, `metrics`, `logs`, `portainer`) |
-| `primary` | MySQL and PostgreSQL primaries |
-| `replica` | MySQL and PostgreSQL replicas |
-| `backup` | Backups of the replicas and log streams (next to the replicas) |
-| `admin` | phpMyAdmin and pgAdmin |
-| `apps` | Every app under `apps/` (or one app by its service name, e.g. `java-service-example`) |
+| Group | Profile | Service |
+|---|---|---|
+| Gateway | `vpn-host` | WireGuard server (on the server with the primaries) |
+| | `vpn-client` | WireGuard peer of another server's VPN host |
+| | `http` | nginx gateway |
+| Monitoring | `pmm` | PMM Server |
+| | `metrics` | PMM client + cAdvisor |
+| | `logs` | Dozzle |
+| | `portainer` | Portainer |
+| MySQL | `mysql-primary` | Primary, read/write |
+| | `mysql-replica` | Read-only replica |
+| | `mysql-backup` | XtraBackup + binary log stream (next to the replica) |
+| | `mysql-admin` | phpMyAdmin |
+| PostgreSQL | `postgres-primary` | Primary, read/write |
+| | `postgres-replica` | Read-only hot standby |
+| | `postgres-backup` | pg_basebackup + WAL stream (next to the replica) |
+| | `postgres-admin` | pgAdmin |
+| Apps | `java-service-example` | Java service example |
+| | `angular-app-example` | Angular SSR app example |
 
-`primary`, `replica`, `backup` and `admin` also exist per engine, e.g.
-`mysql-primary`, `postgres-backup`. The apps are not in the default roles:
-add them where they run, e.g. `COMPOSE_PROFILES=http,apps`.
+The apps are not in the default list: add them where they run, e.g.
+`COMPOSE_PROFILES=http,java-service-example`.
 
 ```env
-# One server with everything (default in .env.dev)
-COMPOSE_PROFILES=vpn-host,http,monitoring,primary,replica,backup,admin
-BACKUP_DIR=/srv/backups
+# One server with everything (default in .env.example)
+COMPOSE_PROFILES=vpn-host,http,pmm,metrics,logs,portainer,mysql-primary,mysql-replica,mysql-backup,mysql-admin,postgres-primary,postgres-replica,postgres-backup,postgres-admin
+MYSQL_BACKUP_DIR=/srv/backups/mysql
+POSTGRES_BACKUP_DIR=/srv/backups/postgres
 
 # Two servers: the primaries...
-COMPOSE_PROFILES=vpn-host,http,monitoring,primary,admin
+COMPOSE_PROFILES=vpn-host,http,pmm,metrics,logs,portainer,mysql-primary,mysql-admin,postgres-primary,postgres-admin
 
 # ...and the replicas with their backups
-COMPOSE_PROFILES=vpn-client,replica,backup
-BACKUP_DIR=/srv/backups
+COMPOSE_PROFILES=vpn-client,mysql-replica,mysql-backup,postgres-replica,postgres-backup
+MYSQL_BACKUP_DIR=/srv/backups/mysql
+POSTGRES_BACKUP_DIR=/srv/backups/postgres
 
 # Only MySQL, with backups
 COMPOSE_PROFILES=mysql-primary,mysql-replica,mysql-backup
+MYSQL_BACKUP_DIR=/srv/backups/mysql
 ```
 
 After changing the roles, `docker compose up -d` starts the new services.
 Commands only see the active profiles, so stop services of a removed role
-explicitly, e.g. `docker compose --profile admin down`, or all of them with
+explicitly, e.g. `docker compose --profile mysql-admin down`, or all of them with
 `docker compose --profile '*' down`. With no profile set, Compose starts
 nothing (`no service selected`).
 
 ## Configuration
 
-The root and every stack except `apps/` load two env files, in order:
+All settings live in one file, `.env` at the root, which Compose loads
+automatically and passes to every stack. It is not committed: each server has
+its own. `.env.example` is the committed template, with development defaults
+and a comment explaining every variable, in this order:
 
-| File | Committed | Purpose |
-|---|---|---|
-| `.env.dev` | yes | Development defaults |
-| `.env` | no | Local overrides and secrets (wins over `.env.dev`) |
+| Section | Contents |
+|---|---|
+| 1. Project | `PROJECT_NAME`: prefix of containers and volumes. Renaming it orphans existing volumes. |
+| 2. Profiles | `COMPOSE_PROFILES`: what this server runs (see [Server roles](#server-roles)) |
+| 3. Network | `NETWORK_NAME`, `NETWORK_SUBNET` (also routed through the VPN), `VPN_DNS_IP` (DNS for service names across servers) |
+| 4. Services | `TZ`, then one block per service: VPN host, VPN client, HTTP, PMM Server, PMM client, Dozzle, Portainer, MySQL, PostgreSQL (each with its own backup settings), apps |
 
-The root files are global: they are loaded through `COMPOSE_ENV_FILES`, reach
-every stack and win over the stack files for the same key.
-
-| Global variable | Default | Purpose |
-|---|---|---|
-| `COMPOSE_PROFILES` | all roles | What this server runs (see [Server roles](#server-roles)) |
-| `BACKUP_DIR` | `./backups` in each backup stack | Backup directory on this server (`mysql/`, `postgres/` inside) |
-| `PROJECT_NAME` | `services` | Prefix of containers and volumes. Renaming it orphans existing volumes. |
-| `NETWORK_NAME` | `services-internal-network` | Internal Docker network |
-| `NETWORK_SUBNET` | `172.30.0.0/16` | Its subnet, also routed through the VPN |
-| `VPN_DNS_IP` | `172.30.255.2` | Fixed address of the VPN host container, DNS for service names across servers |
-| `TZ` | `Etc/UTC` | Time zone of every container |
+When `.env.example` gets a new variable, copy it to each server's `.env`.
+Compare the two with `diff .env.example .env`.
 
 UTC is recommended for `TZ`: PMM, Grafana and Dozzle show times in the
 browser's time zone anyway. pmm-client, cAdvisor and Dozzle have no time zone
 data and stay on UTC, and PostgreSQL keeps the zone it was initialized with.
 
-Production values to set:
+Production values to set in `.env`:
 
-| Stack | Variables |
+| Service | Variables |
 |---|---|
-| `gateway` | `VPN_HOST`, `VPN_PEERS` |
-| `databases/mysql` | `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_USER_PASSWORD`, `MYSQL_REPLICATION_PASSWORD`, `MYSQL_MONITOR_PASSWORD`, `MYSQL_DATABASES` |
-| `databases/postgres` | `POSTGRES_PASSWORD`, `POSTGRES_REPLICATION_PASSWORD`, `POSTGRES_MONITOR_PASSWORD`, `POSTGRES_APP_USER`, `POSTGRES_APP_PASSWORD`, `POSTGRES_DATABASES`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
-| `monitoring` | `PMM_ADMIN_PASSWORD`, `PORTAINER_ADMIN_PASSWORD`, `MONITOR_MYSQL_PASSWORD`, `MONITOR_POSTGRES_PASSWORD`, `SMTP_*` |
+| Gateway | `VPN_HOST`, `VPN_PEERS` |
+| MySQL | `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_USER_PASSWORD`, `MYSQL_REPLICATION_PASSWORD`, `MYSQL_MONITOR_PASSWORD`, `MYSQL_DATABASES` |
+| PostgreSQL | `POSTGRES_PASSWORD`, `POSTGRES_REPLICATION_PASSWORD`, `POSTGRES_MONITOR_PASSWORD`, `POSTGRES_APP_USER`, `POSTGRES_APP_PASSWORD`, `POSTGRES_DATABASES`, `POSTGRES_ADMIN_EMAIL`, `POSTGRES_ADMIN_PASSWORD` |
+| Monitoring | `PMM_ADMIN_PASSWORD`, `PORTAINER_ADMIN_PASSWORD`, `SMTP_*` |
+| Backups | `MYSQL_BACKUP_DIR`, `POSTGRES_BACKUP_DIR` |
 
-The `MONITOR_*` credentials must match the `*_MONITOR_*` values of the database
-stacks.
+The PMM client connects to the databases with the same `MYSQL_MONITOR_*` and
+`POSTGRES_MONITOR_*` accounts the primaries create, so they are set once.
 
 For local tests, a `compose.override.yaml` (not committed) can publish internal
 tools on `127.0.0.1`:
@@ -213,7 +213,7 @@ primaries' network with no other change.
 
 On the **VPN host** (server with the primaries):
 
-1. Add a peer for the new server in `gateway/.env`, e.g.
+1. Add a peer for the new server in `.env`, e.g.
    `VPN_PEERS=admin,replica1`, and run `docker compose up -d vpn`.
 2. Copy `gateway/vpn/host/config/peer_replica1/peer_replica1.conf` to the new
    server (it contains that server's private key).
@@ -221,12 +221,13 @@ On the **VPN host** (server with the primaries):
 On the **replica server** (clone of this repository):
 
 1. Save the file as `gateway/vpn/client/config/peer.conf`.
-2. In the root `.env`, use a different subnet than the VPN host, e.g.
+2. Copy `.env.example` to `.env`. In it, use a different subnet than the VPN host, e.g.
    `NETWORK_SUBNET=172.31.0.0/16`. The client refuses to start if a tunnel
    route overlaps a local one.
-3. Set the roles in the root `.env`: `COMPOSE_PROFILES=vpn-client,replica,backup`
-   and `BACKUP_DIR`. On the VPN host, remove `replica` and `backup` from its
-   roles.
+3. Set the profiles in `.env`:
+   `COMPOSE_PROFILES=vpn-client,mysql-replica,mysql-backup,postgres-replica,postgres-backup`
+   and `MYSQL_BACKUP_DIR` / `POSTGRES_BACKUP_DIR`. On the VPN host, remove the `*-replica` and `*-backup`
+   profiles from its list.
 4. Use the same database passwords and `VPN_DNS_IP` as the VPN host.
 5. `docker compose up -d`, then check `docker compose ps vpn-client` is
    healthy and the replication state (see [Databases](#databases)).
@@ -303,21 +304,22 @@ a new volume to change:
 ### Admin panels
 
 phpMyAdmin (`http://mysql-admin`) and pgAdmin (`http://postgres-admin`) list
-the servers in `ADMIN_HOSTS` / `ADMIN_HOSTS_LABELS`.
+the servers in `MYSQL_ADMIN_HOSTS` / `POSTGRES_ADMIN_HOSTS` (labels in
+`*_ADMIN_HOSTS_LABELS`).
 
 ### Backups
 
-The `backup` role runs on the server with the replicas and writes to
-`BACKUP_DIR` there (`mysql/` and `postgres/` inside). Full backups are taken
-from the replicas (no load on the primaries); the primaries' logs are streamed
-continuously for point-in-time recovery.
+The `mysql-backup` and `postgres-backup` profiles run on the server with the
+replicas and write to `MYSQL_BACKUP_DIR` and `POSTGRES_BACKUP_DIR` there.
+Full backups are taken from the replicas (no load on the primaries); the
+primaries' logs are streamed continuously for point-in-time recovery.
 
 | | MySQL (`databases/mysql/backup`) | PostgreSQL (`databases/postgres/backup`) |
 |---|---|---|
 | Daily backup | `mysql-backup`: Percona XtraBackup of the replica, zstd | `postgres-backup`: `pg_basebackup` of the standby, lz4 |
 | Verification | Decompress and prepare a copy after every backup | `pg_verifybackup` against the manifest |
 | Point in time | `mysql-binlog`: binary logs streamed from the primary | `postgres-wal`: WAL streamed from the primary (replication slot) |
-| Directory | `BACKUP_DIR/mysql` (or `MYSQL_BACKUP_DIR`): `full/`, `binlog/` | `BACKUP_DIR/postgres` (or `POSTGRES_BACKUP_DIR`): `base/`, `wal/` |
+| Directory | `MYSQL_BACKUP_DIR` (default `./backups/mysql`): `full/`, `binlog/` | `POSTGRES_BACKUP_DIR` (default `./backups/postgres`): `base/`, `wal/` |
 | Schedule | `MYSQL_BACKUP_TIME` (UTC), default 02:00 | `POSTGRES_BACKUP_TIME` (`TZ`), default 02:30 |
 
 - A backup is written to `<timestamp>.partial` and renamed only when complete
@@ -329,7 +331,8 @@ continuously for point-in-time recovery.
 - Health checks: the backup services turn unhealthy when the newest backup is
   over 26 hours old, the streamers when they stop.
 - Backup files are readable only by root. Use a separate disk in production
-  (`BACKUP_DIR=/srv/backups`).
+  (e.g. `MYSQL_BACKUP_DIR=/srv/backups/mysql`,
+  `POSTGRES_BACKUP_DIR=/srv/backups/postgres`).
 - The primary keeps WAL for the PostgreSQL stream while it is down, up to
   `POSTGRES_MAX_SLOT_WAL_KEEP_SIZE` (default 10GB). If backups are removed for
   good, drop the slot:
@@ -377,12 +380,12 @@ Each app is a folder in `apps/` with three parts:
 | `Dockerfile` | Copies the export into the image and runs it, with fixed settings |
 | `compose.yaml` | The service: profiles, time zone, volumes |
 
-Apps have no env files: what an app runs is fixed in its Dockerfile. They are
+Apps have no variables in `.env`: what an app runs is fixed in its Dockerfile. They are
 internal; publish them through the HTTP gateway (see
 [HTTP (nginx)](#http-nginx)) or reach them through the VPN.
 
 ```sh
-docker compose --profile apps up -d --build     # or add apps to COMPOSE_PROFILES
+docker compose --profile java-service-example up -d --build   # or add it to COMPOSE_PROFILES
 docker compose logs -f java-service-example
 ```
 
@@ -501,7 +504,7 @@ Same for `postgres-replica-db` / `<PROJECT_NAME>_postgres-replica-data`.
 
 ## Production checklist
 
-- [ ] Real passwords in every `.env`
+- [ ] Real passwords in `.env`
 - [ ] `VPN_HOST` set to the server's public IP or domain
 - [ ] Firewall: only `51820/udp`, `80/tcp` and `443/tcp` open (replica
       servers: no inbound ports)
@@ -511,7 +514,7 @@ Same for `postgres-replica-db` / `<PROJECT_NAME>_postgres-replica-data`.
 - [ ] Replication checked
 - [ ] PMM alert rules and contact points configured and tested
 - [ ] `COMPOSE_PROFILES` set to this server's roles
-- [ ] `BACKUP_DIR` on a separate disk, backup
+- [ ] `MYSQL_BACKUP_DIR` / `POSTGRES_BACKUP_DIR` on a separate disk, backup
       services healthy, and a test restore done
 - [ ] Off-site copy of the backup directories
 - [ ] Apps: exports in `source/` (and JREs in `jre/`), public domains in

@@ -11,9 +11,9 @@
 #                - Linux host (cAdvisor mounts /sys, /var/lib/docker, /dev/kmsg)
 #                - Monitoring accounts created on the database primaries
 # Variables:     MONITOR_SERVER_ADDRESS, PMM_ADMIN_PASSWORD, MONITOR_DATABASES,
-#                MONITOR_MYSQL_USER, MONITOR_MYSQL_PASSWORD,
-#                MONITOR_POSTGRES_USER, MONITOR_POSTGRES_PASSWORD.
-#                TZ from the root .env.dev.
+#                MYSQL_MONITOR_USER, MYSQL_MONITOR_PASSWORD,
+#                POSTGRES_MONITOR_USER, POSTGRES_MONITOR_PASSWORD.
+#                TZ from .env.
 # ============================================================================
 
 services:
@@ -25,14 +25,14 @@ services:
     # Server is not up yet, setup fails and the restart policy retries it.
     image: percona/pmm-client:3
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [monitoring, metrics]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [metrics]
 
     # --------------------------------------------------------------------------
     # PMM agent settings
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # TZ: container time zone, from .env. Default: Etc/UTC.
       # The image has no time zone data, so it stays on UTC.
       TZ: ${TZ:-Etc/UTC}
       # PMM_AGENT_SERVER_ADDRESS: PMM Server host:port.
@@ -58,13 +58,13 @@ services:
       # MONITOR_DATABASES: "true" registers the databases. Default: true.
       MONITOR_DATABASES: ${MONITOR_DATABASES:-true}
       # MONITOR_MYSQL_USER: MySQL monitoring account.
-      MONITOR_MYSQL_USER: ${MONITOR_MYSQL_USER}
+      MONITOR_MYSQL_USER: ${MYSQL_MONITOR_USER}
       # MONITOR_MYSQL_PASSWORD: password of MONITOR_MYSQL_USER.
-      MONITOR_MYSQL_PASSWORD: ${MONITOR_MYSQL_PASSWORD}
+      MONITOR_MYSQL_PASSWORD: ${MYSQL_MONITOR_PASSWORD}
       # MONITOR_POSTGRES_USER: PostgreSQL monitoring role.
-      MONITOR_POSTGRES_USER: ${MONITOR_POSTGRES_USER}
+      MONITOR_POSTGRES_USER: ${POSTGRES_MONITOR_USER}
       # MONITOR_POSTGRES_PASSWORD: password of MONITOR_POSTGRES_USER.
-      MONITOR_POSTGRES_PASSWORD: ${MONITOR_POSTGRES_PASSWORD}
+      MONITOR_POSTGRES_PASSWORD: ${POSTGRES_MONITOR_PASSWORD}
 
     # --------------------------------------------------------------------------
     # Startup
@@ -96,8 +96,8 @@ services:
     # --------------------------------------------------------------------------
     image: gcr.io/cadvisor/cadvisor:v0.52.1
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [monitoring, metrics]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [metrics]
 
     # --------------------------------------------------------------------------
     # Host access
@@ -111,7 +111,7 @@ services:
     # Time zone
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # TZ: container time zone, from .env. Default: Etc/UTC.
       # The image has no time zone data, so it stays on UTC.
       TZ: ${TZ:-Etc/UTC}
 

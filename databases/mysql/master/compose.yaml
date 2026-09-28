@@ -5,13 +5,13 @@
 # Role:          Source of GTID-based replication. The replica clones this
 #                instance with the clone plugin on its first start and then
 #                follows its binary log. Reachable as mysql-primary.
-# Prerequisites: - Credentials from databases/mysql/.env.dev and .env
+# Prerequisites: - Credentials from .env
 #                - mysql-master-entrypoint.sh and init-master.sh next to this
 #                  file
 # Variables:     MYSQL_ROOT_PASSWORD, MYSQL_USER, MYSQL_USER_PASSWORD,
 #                MYSQL_REPLICATION_USER, MYSQL_REPLICATION_PASSWORD,
 #                MYSQL_MONITOR_USER, MYSQL_MONITOR_PASSWORD, MYSQL_DATABASES.
-#                TZ from the root .env.dev.
+#                TZ from .env.
 # ============================================================================
 
 services:
@@ -21,8 +21,8 @@ services:
     # --------------------------------------------------------------------------
     image: percona/percona-server:8.4
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [primary, mysql-primary]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [mysql-primary]
 
     # --------------------------------------------------------------------------
     # Credentials
@@ -30,7 +30,7 @@ services:
     # Read by the image entrypoint (MYSQL_*) and by init-master.sh (the rest).
     # Applied only when the data volume is empty (first start).
     environment:
-      # TZ: container and MySQL system time zone, from the root .env.dev.
+      # TZ: container and MySQL system time zone, from .env.
       # Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
       # MYSQL_ROOT_PASSWORD: root account password. Required.

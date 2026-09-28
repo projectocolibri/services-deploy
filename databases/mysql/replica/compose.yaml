@@ -11,9 +11,9 @@
 #                  account created (init-master.sh)
 #                - Same root password as the primary
 #                - An empty volume for the first clone
-# Variables:     MYSQL_ROOT_PASSWORD, REPLICA_PRIMARY_HOST,
+# Variables:     MYSQL_ROOT_PASSWORD, MYSQL_REPLICA_PRIMARY_HOST,
 #                MYSQL_REPLICATION_USER, MYSQL_REPLICATION_PASSWORD.
-#                TZ and VPN_DNS_IP from the root .env.dev.
+#                TZ and VPN_DNS_IP from .env.
 # ============================================================================
 
 services:
@@ -25,22 +25,22 @@ services:
     # which shuts the server down on purpose.
     image: percona/percona-server:8.4
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [replica, mysql-replica]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [mysql-replica]
 
     # --------------------------------------------------------------------------
     # Replication settings
     # --------------------------------------------------------------------------
     # No depends_on on the primary: the entrypoint waits for it by itself.
     environment:
-      # TZ: container and MySQL system time zone, from the root .env.dev.
+      # TZ: container and MySQL system time zone, from .env.
       # Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
       # MYSQL_ROOT_PASSWORD: root password. Must equal the primary's, because
       # the clone replaces this instance's users with the primary's.
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       # PRIMARY_HOST: host to clone and follow. Default: mysql-primary.
-      PRIMARY_HOST: ${REPLICA_PRIMARY_HOST:-mysql-primary}
+      PRIMARY_HOST: ${MYSQL_REPLICA_PRIMARY_HOST:-mysql-primary}
       # REPLICATION_USER: account on the primary used to clone and replicate.
       REPLICATION_USER: ${MYSQL_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.

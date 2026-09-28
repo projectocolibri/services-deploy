@@ -14,7 +14,7 @@
 #                - PORTAINER_ADMIN_PASSWORD set before the first start
 #                  (12+ characters)
 # Variables:     PORTAINER_ADMIN_PASSWORD.
-#                TZ from the root .env.dev.
+#                TZ from .env.
 # ============================================================================
 
 services:
@@ -24,8 +24,8 @@ services:
     # --------------------------------------------------------------------------
     image: portainer/portainer-ce:lts
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [monitoring, portainer]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [portainer]
 
     # --------------------------------------------------------------------------
     # Server settings
@@ -40,7 +40,7 @@ services:
       - -H
       - unix:///var/run/docker.sock
     environment:
-      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # TZ: container time zone, from .env. Default: Etc/UTC.
       # The UI shows times in the browser's time zone.
       TZ: ${TZ:-Etc/UTC}
     configs:

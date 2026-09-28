@@ -12,9 +12,8 @@
 # Prerequisites: - Linux host with the WireGuard kernel module (kernel 5.6+)
 #                - UDP port VPN_PORT open in the firewall
 #                - VPN_HOST set to this server's public IP or domain
-# Variables:     VPN_HOST, VPN_PORT, VPN_PEERS, VPN_SUBNET and VPN_ALLOWED_IPS
-#                from gateway/.env.dev and gateway/.env; TZ and VPN_DNS_IP from the
-#                root .env.dev.
+# Variables:     VPN_HOST, VPN_PORT, VPN_PEERS, VPN_SUBNET, VPN_ALLOWED_IPS,
+#                TZ and VPN_DNS_IP from .env.
 # ============================================================================
 
 services:
@@ -25,7 +24,7 @@ services:
     # linuxserver.io WireGuard image, pinned to an exact release.
     image: lscr.io/linuxserver/wireguard:1.0.20260223-r0-ls122
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
     profiles: [vpn-host]
 
     # --------------------------------------------------------------------------
@@ -42,10 +41,10 @@ services:
     # WireGuard configuration
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # TZ: container time zone, from .env. Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
       # SERVERURL: endpoint written into client configs (public IP or domain).
-      # No default: must be set in gateway/.env.dev or gateway/.env.
+      # No default: must be set in .env.
       SERVERURL: ${VPN_HOST}
       # SERVERPORT: port written into client configs. Default: 51820.
       SERVERPORT: ${VPN_PORT:-51820}

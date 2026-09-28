@@ -5,14 +5,14 @@
 # Role:          Source of streaming replication. The replica clones this
 #                instance with pg_basebackup on its first start and then
 #                streams its WAL. Reachable as postgres-primary.
-# Prerequisites: - Credentials from databases/postgres/.env.dev and .env
+# Prerequisites: - Credentials from .env
 #                - postgres-master-entrypoint.sh and init-master.sh next to
 #                  this file
 # Variables:     POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_REPLICATION_USER,
 #                POSTGRES_REPLICATION_PASSWORD, POSTGRES_MONITOR_USER,
 #                POSTGRES_MONITOR_PASSWORD, POSTGRES_MAX_SLOT_WAL_KEEP_SIZE,
 #                POSTGRES_APP_USER, POSTGRES_APP_PASSWORD, POSTGRES_DATABASES.
-#                TZ from the root .env.dev.
+#                TZ from .env.
 # ============================================================================
 
 services:
@@ -22,8 +22,8 @@ services:
     # --------------------------------------------------------------------------
     image: percona/percona-distribution-postgresql:17
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [primary, postgres-primary]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [postgres-primary]
     # tini as PID 1: forwards stop signals to PostgreSQL and reaps the
     # background database creation task of the entrypoint wrapper.
     init: true
@@ -35,7 +35,7 @@ services:
     # rest). Applied only when the data volume is empty (first start). No
     # POSTGRES_DB: only the built-in "postgres" database is created.
     environment:
-      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # TZ: container time zone, from .env. Default: Etc/UTC.
       # PostgreSQL's own timezone setting is fixed when the data directory is
       # initialized; changing TZ later does not change it.
       TZ: ${TZ:-Etc/UTC}

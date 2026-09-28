@@ -9,51 +9,29 @@
 #                - logs:   Dozzle: live logs of every container
 #                - portainer: Portainer: container management UI
 #                All internal, reachable only through the VPN.
-# Prerequisites: - monitoring/.env must exist (may be empty)
-#                - PMM_ADMIN_PASSWORD, PORTAINER_ADMIN_PASSWORD and the
-#                  MONITOR_* credentials set in monitoring/.env for production
-# Variables:     Loaded from the env files below. See monitoring/.env.dev for
-#                the meaning and defaults of each variable.
+# Prerequisites: PMM_ADMIN_PASSWORD and PORTAINER_ADMIN_PASSWORD set in the
+#                root .env for production.
+# Variables:     From the root .env, section "Monitoring" (see .env.example for
+#                the meaning and defaults of each variable).
 # ============================================================================
 
 include:
   # --------------------------------------------------------------------------
   # PMM Server
   # --------------------------------------------------------------------------
-  # Env files are layered in order; a key in ./.env overrides ./.env.dev.
   - path: ./pmm/compose.yaml
-    env_file:
-      # Committed development defaults.
-      - ./.env.dev
-      # Local, uncommitted overrides and secrets.
-      - ./.env
 
   # --------------------------------------------------------------------------
   # PMM client and cAdvisor
   # --------------------------------------------------------------------------
   - path: ./client/compose.yaml
-    env_file:
-      # Committed development defaults.
-      - ./.env.dev
-      # Local, uncommitted overrides and secrets.
-      - ./.env
 
   # --------------------------------------------------------------------------
   # Container logs (Dozzle)
   # --------------------------------------------------------------------------
   - path: ./logs/compose.yaml
-    env_file:
-      # Committed development defaults.
-      - ./.env.dev
-      # Local, uncommitted overrides and secrets.
-      - ./.env
 
   # --------------------------------------------------------------------------
   # Container management (Portainer)
   # --------------------------------------------------------------------------
   - path: ./portainer/compose.yaml
-    env_file:
-      # Committed development defaults.
-      - ./.env.dev
-      # Local, uncommitted overrides and secrets.
-      - ./.env

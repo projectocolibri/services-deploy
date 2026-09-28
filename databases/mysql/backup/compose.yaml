@@ -9,8 +9,7 @@
 #                  - mysql-backup: Percona XtraBackup of the local replica,
 #                    verified, with retention
 #                  - mysql-binlog: streams the primary's binary logs
-#                Backups are written to BACKUP_DIR/mysql (or MYSQL_BACKUP_DIR)
-#                on this server.
+#                Backups are written to MYSQL_BACKUP_DIR on this server.
 # Prerequisites: - The replica (../replica) running on this server: its data
 #                  volume is read by XtraBackup
 #                - The primary reachable as mysql-primary (same server, or
@@ -19,11 +18,11 @@
 #                  MYSQL_BACKUP_RETENTION_DAYS + 1 compressed backups plus the
 #                  binary logs; ideally a separate disk
 # Variables:     MYSQL_ROOT_PASSWORD, MYSQL_REPLICATION_USER,
-#                MYSQL_REPLICATION_PASSWORD, REPLICA_PRIMARY_HOST,
+#                MYSQL_REPLICATION_PASSWORD, MYSQL_REPLICA_PRIMARY_HOST,
 #                MYSQL_BACKUP_DIR, MYSQL_BACKUP_TIME,
 #                MYSQL_BACKUP_RETENTION_DAYS, MYSQL_BACKUP_VERIFY,
 #                MYSQL_BACKUP_THREADS, MYSQL_BINLOG_SERVER_ID.
-#                TZ, VPN_DNS_IP and BACKUP_DIR from the root .env.dev.
+#                TZ and VPN_DNS_IP from .env.
 # ============================================================================
 
 services:
@@ -35,8 +34,8 @@ services:
     # read the replica's data files and write the backups.
     image: percona/percona-xtrabackup:8.4
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [backup, mysql-backup]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [mysql-backup]
     user: root
 
     # --------------------------------------------------------------------------
@@ -71,10 +70,9 @@ services:
       # Replica's data directory (same path as in the replica container),
       # read-only: the backup can never modify the replica's data.
       - mysql-replica-data:/var/lib/mysql:ro
-      # Backup destination on this server: MYSQL_BACKUP_DIR if set, else
-      # BACKUP_DIR/mysql (root .env.dev). Relative paths are relative to this
-      # directory. Default: ./backups/mysql.
-      - ${MYSQL_BACKUP_DIR:-${BACKUP_DIR:-./backups}/mysql}:/backups
+      # Backup destination on this server: MYSQL_BACKUP_DIR (.env). Relative
+      # paths are relative to this directory. Default: ./backups/mysql.
+      - ${MYSQL_BACKUP_DIR:-./backups/mysql}:/backups
       # Scheduler script.
       - ./mysql-backup.sh:/usr/local/bin/mysql-backup.sh:ro
 
@@ -96,8 +94,8 @@ services:
     # Same image as the servers, used for mysqlbinlog and the mysql client.
     image: percona/percona-server:8.4
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [backup, mysql-backup]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [mysql-backup]
     user: root
 
     # --------------------------------------------------------------------------
@@ -107,7 +105,7 @@ services:
       # TZ: time zone of log timestamps. Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
       # PRIMARY_HOST: primary to stream from. Default: mysql-primary.
-      PRIMARY_HOST: ${REPLICA_PRIMARY_HOST:-mysql-primary}
+      PRIMARY_HOST: ${MYSQL_REPLICA_PRIMARY_HOST:-mysql-primary}
       # REPLICATION_USER: replication account on the primary.
       REPLICATION_USER: ${MYSQL_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.
@@ -137,7 +135,7 @@ services:
     # --------------------------------------------------------------------------
     volumes:
       # Same destination as mysql-backup (binlog/ subfolder).
-      - ${MYSQL_BACKUP_DIR:-${BACKUP_DIR:-./backups}/mysql}:/backups
+      - ${MYSQL_BACKUP_DIR:-./backups/mysql}:/backups
       # Stream script.
       - ./mysql-binlog.sh:/usr/local/bin/mysql-binlog.sh:ro
 

@@ -10,43 +10,26 @@
 #                - HTTP       (./http):        public web apps behind nginx,
 #                                              TLS ends here
 #                Each service runs only when its profile is in COMPOSE_PROFILES
-#                (root .env): vpn-host, vpn-client, http. Enable either the VPN
+#                (.env): vpn-host, vpn-client, http. Enable either the VPN
 #                host or the VPN client on a server, never both.
-# Prerequisites: - gateway/.env must exist (may be empty)
-#                - Firewall open for the VPN (UDP, host only) and HTTP/HTTPS
-#                  (TCP) ports
-# Variables:     Loaded from the env files below. See gateway/.env.dev for the
-#                meaning and defaults of each variable.
+# Prerequisites: Firewall open for the VPN (UDP, host only) and HTTP/HTTPS
+#                (TCP) ports.
+# Variables:     From the root .env, section "Gateway" (see .env.example for
+#                the meaning and defaults of each variable).
 # ============================================================================
 
 include:
   # --------------------------------------------------------------------------
   # VPN host (WireGuard server)
   # --------------------------------------------------------------------------
-  # Env files are layered in order; a key in ./.env overrides ./.env.dev.
   - path: ./vpn/host/compose.yaml
-    env_file:
-      # Committed development defaults.
-      - ./.env.dev
-      # Local, uncommitted overrides and secrets.
-      - ./.env
 
   # --------------------------------------------------------------------------
   # VPN client (WireGuard peer of another server's VPN host)
   # --------------------------------------------------------------------------
   - path: ./vpn/client/compose.yaml
-    env_file:
-      # Committed development defaults.
-      - ./.env.dev
-      # Local, uncommitted overrides and secrets.
-      - ./.env
 
   # --------------------------------------------------------------------------
   # HTTP gateway (nginx reverse proxy)
   # --------------------------------------------------------------------------
   - path: ./http/compose.yaml
-    env_file:
-      # Committed development defaults.
-      - ./.env.dev
-      # Local, uncommitted overrides and secrets.
-      - ./.env

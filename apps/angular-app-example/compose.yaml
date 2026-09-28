@@ -11,7 +11,7 @@
 # Prerequisites: - ./source: content of dist/<app>/ from `ng build` (not
 #                  committed)
 #                - The public domain in NG_ALLOWED_HOSTS (./Dockerfile)
-# Variables:     TZ from the root .env.dev.
+# Variables:     TZ from .env.
 # ============================================================================
 
 services:
@@ -22,8 +22,8 @@ services:
     build:
       context: .
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [apps, angular-app-example]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [angular-app-example]
     # tini as PID 1: forwards stop signals to node.
     init: true
 
@@ -41,5 +41,5 @@ services:
     # --------------------------------------------------------------------------
     environment:
       # TZ: time zone of the server (logs, dates rendered on the server), from
-      # the root .env.dev. Default: Etc/UTC.
+      # .env. Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}

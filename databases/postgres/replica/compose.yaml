@@ -10,9 +10,9 @@
 # Prerequisites: - The primary reachable at PRIMARY_HOST with the replication
 #                  role and pg_hba rule created (init-master.sh)
 #                - An empty volume for the first clone
-# Variables:     REPLICA_PRIMARY_HOST, POSTGRES_REPLICATION_USER,
+# Variables:     POSTGRES_REPLICA_PRIMARY_HOST, POSTGRES_REPLICATION_USER,
 #                POSTGRES_REPLICATION_PASSWORD.
-#                TZ and VPN_DNS_IP from the root .env.dev.
+#                TZ and VPN_DNS_IP from .env.
 # ============================================================================
 
 services:
@@ -22,8 +22,8 @@ services:
     # --------------------------------------------------------------------------
     image: percona/percona-distribution-postgresql:17
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [replica, postgres-replica]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [postgres-replica]
 
     # --------------------------------------------------------------------------
     # Replication settings
@@ -32,11 +32,11 @@ services:
     # No POSTGRES_USER / POSTGRES_PASSWORD: the data is cloned from the
     # primary (same roles), so initdb never runs here.
     environment:
-      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # TZ: container time zone, from .env. Default: Etc/UTC.
       # PostgreSQL's own timezone setting is cloned from the primary.
       TZ: ${TZ:-Etc/UTC}
       # PRIMARY_HOST: host to clone and stream from. Default: postgres-primary.
-      PRIMARY_HOST: ${REPLICA_PRIMARY_HOST:-postgres-primary}
+      PRIMARY_HOST: ${POSTGRES_REPLICA_PRIMARY_HOST:-postgres-primary}
       # REPLICATION_USER: replication role on the primary.
       REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.

@@ -14,7 +14,7 @@
 # Prerequisites: - ./source: Linux export of the product (not committed)
 #                - ./jre: Linux JRE of the same architecture (not committed)
 #                - The app listening for HTTP on 0.0.0.0:8080
-# Variables:     TZ from the root .env.dev.
+# Variables:     TZ from .env.
 # ============================================================================
 
 services:
@@ -25,8 +25,8 @@ services:
     build:
       context: .
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [apps, java-service-example]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [java-service-example]
     # tini as PID 1: forwards stop signals to the launcher and reaps processes
     # the app starts. Java runs as a child of the launcher and is killed on
     # stop without running its shutdown hooks.
@@ -45,7 +45,7 @@ services:
     # Time zone
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container and JVM time zone, from the root .env.dev.
+      # TZ: container and JVM time zone, from .env.
       # Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
 

@@ -5,12 +5,13 @@
 #                replica.
 # Role:          Internal tool, reachable only through the VPN at
 #                http://postgres-admin (no published ports). The server list
-#                is rebuilt from ADMIN_HOSTS on every start.
+#                is rebuilt from POSTGRES_ADMIN_HOSTS on every start.
 # Prerequisites: - VPN connection
 #                - pgadmin-entrypoint.sh next to this file
-# Variables:     ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_HOSTS, ADMIN_HOSTS_LABELS,
-#                ADMIN_HOSTS_USER.
-#                TZ from the root .env.dev.
+# Variables:     POSTGRES_ADMIN_EMAIL, POSTGRES_ADMIN_PASSWORD,
+#                POSTGRES_ADMIN_HOSTS, POSTGRES_ADMIN_HOSTS_LABELS,
+#                POSTGRES_ADMIN_HOSTS_USER.
+#                TZ from .env.
 # ============================================================================
 
 services:
@@ -22,36 +23,36 @@ services:
     # ../compose.yaml, and depending on an undefined service is an error.
     image: dpage/pgadmin4:9
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [admin, postgres-admin]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [postgres-admin]
 
     # --------------------------------------------------------------------------
     # Login and server list
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # TZ: container time zone, from .env. Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
       # PGADMIN_DEFAULT_EMAIL: initial administrator login (first start only).
-      PGADMIN_DEFAULT_EMAIL: ${ADMIN_EMAIL}
+      PGADMIN_DEFAULT_EMAIL: ${POSTGRES_ADMIN_EMAIL}
       # PGADMIN_DEFAULT_PASSWORD: initial administrator password (first start only).
-      PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD}
+      PGADMIN_DEFAULT_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
       # ADMIN_HOSTS: servers to register (comma separated), read by the entrypoint.
-      ADMIN_HOSTS: ${ADMIN_HOSTS}
+      ADMIN_HOSTS: ${POSTGRES_ADMIN_HOSTS}
       # ADMIN_HOSTS_LABELS: display names for ADMIN_HOSTS, same order.
-      ADMIN_HOSTS_LABELS: ${ADMIN_HOSTS_LABELS}
+      ADMIN_HOSTS_LABELS: ${POSTGRES_ADMIN_HOSTS_LABELS}
       # ADMIN_HOSTS_USER: role name pre-filled for every registered server.
-      ADMIN_HOSTS_USER: ${ADMIN_HOSTS_USER}
+      ADMIN_HOSTS_USER: ${POSTGRES_ADMIN_HOSTS_USER}
       # PGADMIN_SERVER_JSON_FILE: where the entrypoint writes the server list
       # and where pgAdmin imports it from.
       PGADMIN_SERVER_JSON_FILE: /tmp/servers.json
       # PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True" replaces the stored server
-      # list with the file on every start, so ADMIN_HOSTS changes apply.
+      # list with the file on every start, so POSTGRES_ADMIN_HOSTS changes apply.
       PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
 
     # --------------------------------------------------------------------------
     # Startup
     # --------------------------------------------------------------------------
-    # Builds servers.json from ADMIN_HOSTS, then runs the image entrypoint.
+    # Builds servers.json from POSTGRES_ADMIN_HOSTS, then runs the image entrypoint.
     entrypoint: ["/bin/sh", "/usr/local/bin/pgadmin-entrypoint.sh"]
 
     # --------------------------------------------------------------------------
@@ -67,5 +68,5 @@ services:
 # Volumes
 # ----------------------------------------------------------------------------
 volumes:
-  # pgAdmin data. Delete it to re-apply ADMIN_EMAIL and ADMIN_PASSWORD.
+  # pgAdmin data. Delete it to re-apply POSTGRES_ADMIN_EMAIL and POSTGRES_ADMIN_PASSWORD.
   pgadmin-data:

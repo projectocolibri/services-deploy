@@ -6,9 +6,10 @@
 #                http://mysql-admin (no published ports). Users log in with
 #                MySQL credentials.
 # Prerequisites: - VPN connection
-#                - The MySQL servers listed in ADMIN_HOSTS running
-# Variables:     ADMIN_HOSTS, ADMIN_HOSTS_LABELS, ADMIN_UPLOAD_LIMIT.
-#                TZ from the root .env.dev.
+#                - The MySQL servers listed in MYSQL_ADMIN_HOSTS running
+# Variables:     MYSQL_ADMIN_HOSTS, MYSQL_ADMIN_HOSTS_LABELS,
+#                MYSQL_ADMIN_UPLOAD_LIMIT.
+#                TZ from .env.
 # ============================================================================
 
 services:
@@ -20,18 +21,18 @@ services:
     # ../compose.yaml, and depending on an undefined service is an error.
     image: phpmyadmin:5.2
     restart: always
-    # Runs when COMPOSE_PROFILES (root .env) includes one of these.
-    profiles: [admin, mysql-admin]
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [mysql-admin]
 
     # --------------------------------------------------------------------------
     # Server list and limits
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from the root .env.dev. Default: Etc/UTC.
+      # TZ: container time zone, from .env. Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
       # PMA_HOSTS: servers offered on the login screen (comma separated).
-      PMA_HOSTS: ${ADMIN_HOSTS}
+      PMA_HOSTS: ${MYSQL_ADMIN_HOSTS}
       # PMA_VERBOSES: display names for PMA_HOSTS, same order (comma separated).
-      PMA_VERBOSES: ${ADMIN_HOSTS_LABELS}
+      PMA_VERBOSES: ${MYSQL_ADMIN_HOSTS_LABELS}
       # UPLOAD_LIMIT: maximum import file size. Default: 64M.
-      UPLOAD_LIMIT: ${ADMIN_UPLOAD_LIMIT:-64M}
+      UPLOAD_LIMIT: ${MYSQL_ADMIN_UPLOAD_LIMIT:-64M}
