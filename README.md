@@ -316,9 +316,10 @@ primaries' logs are streamed continuously for point-in-time recovery.
 
 | | MySQL (`databases/mysql/backup`) | PostgreSQL (`databases/postgres/backup`) |
 |---|---|---|
-| Daily backup | `mysql-backup`: Percona XtraBackup of the replica, zstd | `postgres-backup`: `pg_basebackup` of the standby, lz4 |
+| Container | `mysql-backup` | `postgres-backup` |
+| Daily backup | Percona XtraBackup of the replica, zstd | `pg_basebackup` of the standby, lz4 |
 | Verification | Decompress and prepare a copy after every backup | `pg_verifybackup` against the manifest |
-| Point in time | `mysql-binlog`: binary logs streamed from the primary | `postgres-wal`: WAL streamed from the primary (replication slot) |
+| Point in time | Binary logs streamed from the primary (in the background, same container) | WAL streamed from the primary through a replication slot (in the background, same container) |
 | Directory | `MYSQL_BACKUP_DIR` (default `./backups/mysql`): `full/`, `binlog/` | `POSTGRES_BACKUP_DIR` (default `./backups/postgres`): `base/`, `wal/` |
 | Schedule | `MYSQL_BACKUP_TIME` (UTC), default 02:00 | `POSTGRES_BACKUP_TIME` (`TZ`), default 02:30 |
 
@@ -328,8 +329,14 @@ primaries' logs are streamed continuously for point-in-time recovery.
   hourly.
 - Retention (`*_BACKUP_RETENTION_DAYS`, default 7) removes older backups but
   never the newest, and keeps logs back to the oldest remaining backup.
-- Health checks: the backup services turn unhealthy when the newest backup is
-  over 26 hours old, the streamers when they stop.
+- Health checks: a backup container turns unhealthy when its log stream stops
+  or the newest backup is over 26 hours old.
+- New primary: the stream records the primary's identity (MySQL
+  `server_uuid`, PostgreSQL system identifier). If the primary's data volume
+  is recreated, the old logs are moved to `binlog.<id>.<date>` /
+  `wal.<id>.<date>` (kept; delete them when no longer needed), streaming
+  starts fresh and a new full backup is taken at once, so the logs of two
+  servers are never mixed.
 - Backup files are readable only by root. Use a separate disk in production
   (e.g. `MYSQL_BACKUP_DIR=/srv/backups/mysql`,
   `POSTGRES_BACKUP_DIR=/srv/backups/postgres`).

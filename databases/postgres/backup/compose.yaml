@@ -6,10 +6,11 @@
 #                recovery.
 # Role:          Runs on the server with the replica (which can be another
 #                server than the primary, connected through the VPN client).
-#                  - postgres-backup: pg_basebackup of the local standby,
-#                    verified and compressed, with retention
-#                  - postgres-wal: streams the primary's WAL through a
+#                One container, postgres-backup.sh:
+#                  - in the background: streams the primary's WAL through a
 #                    replication slot
+#                  - in the foreground: pg_basebackup of the local standby,
+#                    verified and compressed, with retention
 #                Backups are written to POSTGRES_BACKUP_DIR on this server.
 # Prerequisites: - The replica (../replica) running on this server
 #                - The primary reachable as postgres-primary (same server, or
@@ -41,17 +42,21 @@ services:
     user: root
 
     # --------------------------------------------------------------------------
-    # Backup settings
+    # Backup and stream settings
     # --------------------------------------------------------------------------
     environment:
       # TZ: time zone of BACKUP_TIME and log timestamps. Default: Etc/UTC.
       TZ: ${TZ:-Etc/UTC}
       # BACKUP_SOURCE_HOST: standby to back up (on this server).
       BACKUP_SOURCE_HOST: postgres-replica
+      # PRIMARY_HOST: primary to stream WAL from. Default: postgres-primary.
+      PRIMARY_HOST: ${POSTGRES_REPLICA_PRIMARY_HOST:-postgres-primary}
       # REPLICATION_USER: replication role.
       REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.
       REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      # WAL_SLOT: replication slot on the primary. Default: backup_wal.
+      WAL_SLOT: ${POSTGRES_WAL_SLOT:-backup_wal}
       # BACKUP_TIME: daily start time, HH:MM. Default: 02:30.
       BACKUP_TIME: ${POSTGRES_BACKUP_TIME:-02:30}
       # BACKUP_RETENTION_DAYS: days to keep backups. Default: 7.
@@ -65,57 +70,6 @@ services:
     entrypoint: ["/bin/bash", "/usr/local/bin/postgres-backup.sh"]
 
     # --------------------------------------------------------------------------
-    # Backups and scripts
-    # --------------------------------------------------------------------------
-    volumes:
-      # Backup destination on this server: POSTGRES_BACKUP_DIR (.env). Relative
-      # paths are relative to this directory. Default: ./backups/postgres.
-      - ${POSTGRES_BACKUP_DIR:-./backups/postgres}:/backups
-      # Scheduler script.
-      - ./postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro
-
-    # --------------------------------------------------------------------------
-    # Health check
-    # --------------------------------------------------------------------------
-    # Healthy while a backup runs or the newest backup is under 26 hours old.
-    healthcheck:
-      test: ["CMD", "/bin/bash", "/usr/local/bin/postgres-backup.sh", "health"]
-      interval: 5m
-      timeout: 10s
-      retries: 1
-      start_period: 1h
-
-  postgres-wal:
-    # --------------------------------------------------------------------------
-    # Image and restart policy
-    # --------------------------------------------------------------------------
-    image: percona/percona-distribution-postgresql:17
-    restart: always
-    # Runs when COMPOSE_PROFILES (.env) includes this profile.
-    profiles: [postgres-backup]
-    user: root
-
-    # --------------------------------------------------------------------------
-    # Stream settings
-    # --------------------------------------------------------------------------
-    environment:
-      # TZ: time zone of log timestamps. Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
-      # PRIMARY_HOST: primary to stream from. Default: postgres-primary.
-      PRIMARY_HOST: ${POSTGRES_REPLICA_PRIMARY_HOST:-postgres-primary}
-      # REPLICATION_USER: replication role on the primary.
-      REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
-      # REPLICATION_PASSWORD: password of REPLICATION_USER.
-      REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
-      # WAL_SLOT: replication slot on the primary. Default: backup_wal.
-      WAL_SLOT: ${POSTGRES_WAL_SLOT:-backup_wal}
-
-    # --------------------------------------------------------------------------
-    # Startup
-    # --------------------------------------------------------------------------
-    entrypoint: ["/bin/bash", "/usr/local/bin/postgres-wal.sh"]
-
-    # --------------------------------------------------------------------------
     # Network
     # --------------------------------------------------------------------------
     # VPN_DNS_IP: resolves postgres-primary when the primary runs on another
@@ -127,18 +81,21 @@ services:
     # Backups and scripts
     # --------------------------------------------------------------------------
     volumes:
-      # Same destination as postgres-backup (wal/ subfolder).
+      # Backup destination on this server: POSTGRES_BACKUP_DIR (.env), with
+      # base/ and wal/ inside. Relative paths are relative to this directory.
+      # Default: ./backups/postgres.
       - ${POSTGRES_BACKUP_DIR:-./backups/postgres}:/backups
-      # Stream script.
-      - ./postgres-wal.sh:/usr/local/bin/postgres-wal.sh:ro
+      # Backup and stream script.
+      - ./postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro
 
     # --------------------------------------------------------------------------
     # Health check
     # --------------------------------------------------------------------------
-    # Healthy while pg_receivewal is running.
+    # Healthy while the WAL stream runs and a backup is running or the newest
+    # backup is under 26 hours old.
     healthcheck:
-      test: ["CMD", "/bin/bash", "/usr/local/bin/postgres-wal.sh", "health"]
+      test: ["CMD", "/bin/bash", "/usr/local/bin/postgres-backup.sh", "health"]
       interval: 1m
       timeout: 10s
       retries: 3
-      start_period: 2m
+      start_period: 1h

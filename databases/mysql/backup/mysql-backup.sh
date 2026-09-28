@@ -1,13 +1,27 @@
 #!/bin/bash
 # ============================================================================
-# MySQL scheduled physical backup (Percona XtraBackup)
+# MySQL backups: daily full backup + continuous binary log stream
 #
-# Purpose:       Takes a daily full physical backup of the local MySQL replica,
-#                verifies it and removes backups and binary logs past retention.
-# Role:          Base backups for disaster recovery. Together with the binary
-#                logs streamed by mysql-binlog.sh they allow point-in-time
-#                recovery. Backing up the replica keeps the load off the
-#                primary.
+# Purpose:       Keeps everything needed for full and point-in-time recovery
+#                of MySQL in the backup directory, from one container.
+# Role:          Runs on the server with the replica.
+#                Binary log stream (background, pulls from the primary, so it
+#                works from another server through the VPN client):
+#                  1. checks the primary's server_uuid against the one recorded
+#                     in binlog/: a different primary (recreated data volume)
+#                     moves the old binary logs aside and asks for a full
+#                     backup at once, so the two are never mixed
+#                  2. resumes from the newest local binary log, or starts at
+#                     the file the replica is currently reading
+#                  3. runs mysqlbinlog --stop-never, which writes every new
+#                     event into files identical to the primary's
+#                  4. watchdog: restarts the stream when it falls behind the
+#                     replica for WATCHDOG_STRIKES minutes (a silently dropped
+#                     connection is otherwise never noticed)
+#                  5. if the primary already purged the file to resume from,
+#                     logs a gap warning and restarts at the current file
+#                Full backup (foreground, Percona XtraBackup of the replica,
+#                which keeps the load off the primary):
 #                  1. waits for the replica to be up and replicating
 #                  2. runs a backup at once if none exists, then every day at
 #                     BACKUP_TIME
@@ -19,14 +33,21 @@
 #                     keeping the newest) and binary logs no longer needed
 #                Called with "health", runs the health check instead.
 # Prerequisites: - percona/percona-xtrabackup image matching the server's major
-#                  version (8.4)
+#                  version (8.4); it also provides mysql, mysqladmin and
+#                  mysqlbinlog
 #                - The replica's data volume mounted read-only at /var/lib/mysql
+#                - Replication account on the primary (REPLICATION SLAVE)
 #                - Backup directory mounted at /backups
 #                - Runs as root (reads the data files, writes backups)
 #
 # Variables:
 #   BACKUP_SOURCE_HOST     (env) replica to back up. Default: mysql-replica
 #   MYSQL_ROOT_PASSWORD    (env) root password of the replica
+#   PRIMARY_HOST           (env) primary to stream from. Default: mysql-primary
+#   REPLICATION_USER       (env) replication account on the primary
+#   REPLICATION_PASSWORD   (env) password of REPLICATION_USER
+#   BINLOG_SERVER_ID       (env) server ID the stream uses on the primary; must
+#                          differ from every server and replica. Default: 101
 #   BACKUP_TIME            (env) daily start time, HH:MM. Default: 02:00. The
 #                          XtraBackup image has no time zone data: always UTC
 #   BACKUP_RETENTION_DAYS  (env) days to keep backups. Default: 7
@@ -34,17 +55,26 @@
 #   BACKUP_THREADS         (env) parallel copy/compression threads. Default: 2
 #   BACKUP_MAX_AGE_HOURS   (env) health fails when the newest backup is older.
 #                          Default: 26
+#   component              (local) log prefix: backup, or binlog in the stream
 #   backup_root            (local) directory holding one folder per backup
-#   binlog_dir             (local) binary logs written by mysql-binlog.sh
+#   binlog_dir             (local) binary logs copied from the primary
 #   run_dir                (local) container-only state (credentials, lock)
-#   client_cnf             (local) option file with the root credentials
+#   root_cnf, repl_cnf     (local) option files with the credentials
 #   running                (local) lock file present while a backup runs
+#   pid_file, err_file     (local) PID and stderr of the running mysqlbinlog
+#   uuid_file              (local) server_uuid of the primary the local binary
+#                          logs came from
+#   backup_now             (local) flag file: the stream asks for a full backup
+#                          at once (after a primary change)
+#   reset                  (local) "1" ignores local files and restarts at the
+#                          replica's current file (after a gap)
 #   start, ts              (local) backup start time (epoch, and timestamp name)
 #   target, partial        (local) final and in-progress backup directories
-#   work                   (local) scratch copy used for verification
 #   cutoff                 (local) epoch before which backups are pruned
 #   backups, oldest        (local) complete backups (sorted), oldest kept one
 #   newest_binlog          (local) binary log being written, never pruned
+#   file, pos, local_size  (local) replica's read position, local copy's size
+#   strikes, pid           (local) watchdog counter, PID of mysqlbinlog
 #   latest, age            (local, health) newest backup and its age in seconds
 #   "$1"                   (args) "health" runs the health check
 # ============================================================================
@@ -55,20 +85,30 @@ set -uo pipefail
 # Settings
 # ----------------------------------------------------------------------------
 source_host="${BACKUP_SOURCE_HOST:-mysql-replica}"
+primary="${PRIMARY_HOST:-mysql-primary}"
+server_id="${BINLOG_SERVER_ID:-101}"
 backup_time="${BACKUP_TIME:-02:00}"
 retention_days="${BACKUP_RETENTION_DAYS:-7}"
 verify="${BACKUP_VERIFY:-true}"
 threads="${BACKUP_THREADS:-2}"
 max_age_hours="${BACKUP_MAX_AGE_HOURS:-26}"
+watchdog_strikes=5
 
 backup_root=/backups/full
 binlog_dir=/backups/binlog
 run_dir=/run/mysql-backup
-client_cnf="${run_dir}/client.cnf"
+root_cnf="${run_dir}/root.cnf"
+repl_cnf="${run_dir}/replication.cnf"
 running="${run_dir}/running"
+pid_file="${run_dir}/mysqlbinlog.pid"
+err_file="${run_dir}/mysqlbinlog.err"
+uuid_file="${binlog_dir}/.server_uuid"
+backup_now="${run_dir}/backup-now"
+
+component=backup
 
 log() {
-    echo "[mysql-backup] $(date '+%F %T') $*"
+    echo "[mysql-${component}] $(date '+%F %T') $*"
 }
 
 # latest_backup: prints the newest complete backup directory (empty if none).
@@ -80,9 +120,10 @@ latest_backup() {
 # ----------------------------------------------------------------------------
 # Health check mode
 # ----------------------------------------------------------------------------
-# Healthy while a backup is running, or when the newest complete backup is
-# younger than BACKUP_MAX_AGE_HOURS.
+# Healthy while the binary log stream runs and either a backup is running or
+# the newest complete backup is younger than BACKUP_MAX_AGE_HOURS.
 if [ "${1:-}" = "health" ]; then
+    [ -f "${pid_file}" ] && kill -0 "$(cat "${pid_file}")" 2>/dev/null || exit 1
     [ -f "${running}" ] && exit 0
     latest="$(latest_backup)"
     [ -n "${latest}" ] && [ -f "${latest}/.started" ] || exit 1
@@ -94,23 +135,163 @@ fi
 # ----------------------------------------------------------------------------
 # Credentials
 # ----------------------------------------------------------------------------
-# Option file readable only inside this container, so the password is not
+# Option files readable only inside this container, so the passwords are not
 # passed on the command line.
-mkdir -p "${run_dir}" "${backup_root}"
-rm -f "${running}"
+mkdir -p "${run_dir}" "${backup_root}" "${binlog_dir}"
+rm -f "${running}" "${pid_file}" "${backup_now}"
 (
     umask 077
-    printf '[client]\nuser=root\npassword="%s"\n' "${MYSQL_ROOT_PASSWORD}" > "${client_cnf}"
+    printf '[client]\nuser=root\npassword="%s"\n' "${MYSQL_ROOT_PASSWORD}" > "${root_cnf}"
+    printf '[client]\nuser=%s\npassword="%s"\n' "${REPLICATION_USER}" "${REPLICATION_PASSWORD}" > "${repl_cnf}"
 )
 
-# ----------------------------------------------------------------------------
-# Helpers
-# ----------------------------------------------------------------------------
+# ============================================================================
+# Binary log stream
+# ============================================================================
+
+# replica_field NAME: prints a field of the local replica's SHOW REPLICA STATUS.
+replica_field() {
+    mysql --defaults-extra-file="${root_cnf}" --host="${source_host}" -e 'SHOW REPLICA STATUS\G' 2>/dev/null \
+        | awk -F': ' -v k="$1" '{ gsub(/^ +/, "", $1) } $1 == k { print $2 }'
+}
+
+# newest_local: prints the newest binary log already copied (empty if none).
+newest_local() {
+    find "${binlog_dir}" -maxdepth 1 -type f -regex '.*\.[0-9]+' -printf '%f\n' | sort | tail -1
+}
+
+# check_primary: records the primary's server_uuid. If the local binary logs
+# came from another primary (its data volume was recreated), moves them to
+# binlog.<old uuid>.<date> so the new primary's files never overwrite or mix
+# with them, and asks for a full backup at once. The local files are foreign
+# when the recorded uuid differs, or when the newest is ahead of the primary's
+# current file (read from the replica), which the same server can never be
+# (this also covers files from before the uuid was recorded).
+check_primary() {
+    local uuid old newest current foreign=0
+    uuid="$(mysql --defaults-extra-file="${repl_cnf}" --host="${primary}" -N -B -e 'SELECT @@server_uuid' 2>/dev/null)"
+    [ -n "${uuid}" ] || return 1
+    old="$(cat "${uuid_file}" 2>/dev/null)"
+    newest="$(newest_local)"
+    if [ -n "${newest}" ]; then
+        current="$(replica_field Source_Log_File)"
+        # Without a recorded uuid the replica must answer; with one, a replica
+        # still starting does not hold up the stream.
+        [ -n "${current}" ] || [ -n "${old}" ] || return 1
+        if { [ -n "${old}" ] && [ "${old}" != "${uuid}" ]; } \
+            || { [ -n "${current}" ] && [[ "${newest}" > "${current}" ]]; }; then
+            foreign=1
+        fi
+    fi
+    if [ "${foreign}" = "1" ]; then
+        local archive="${binlog_dir}.${old:-unknown}.$(date +%Y%m%d-%H%M%S)"
+        log "WARNING: ${primary} is a different server (server_uuid ${uuid}, local"
+        log "binary logs are from ${old:-an unrecorded server} or ahead of it). Moving them to"
+        log "${archive}; delete it once its backups are no longer needed."
+        mv "${binlog_dir}" "${archive}"
+        mkdir -p "${binlog_dir}"
+        # Existing backups belong to the old primary: take a new one now.
+        touch "${backup_now}"
+    fi
+    echo "${uuid}" > "${uuid_file}"
+}
+
+# start_file: file to start streaming from: the newest local copy (downloaded
+# again from its beginning), or the file the replica is reading.
+start_file() {
+    local file
+    file="$(newest_local)"
+    if [ "${reset}" = "1" ] || [ -z "${file}" ]; then
+        until file="$(replica_field Source_Log_File)" && [ -n "${file}" ]; do
+            log "waiting for replica ${source_host} to report its source binary log..."
+            sleep 10 & wait $!
+        done
+    fi
+    echo "${file}"
+}
+
+# behind: succeeds when the local copy is behind what the replica has read.
+behind() {
+    local file pos newest local_size
+    file="$(replica_field Source_Log_File)"
+    pos="$(replica_field Read_Source_Log_Pos)"
+    [ -n "${file}" ] && [ -n "${pos}" ] || return 1
+    newest="$(newest_local)"
+    [[ "${newest}" > "${file}" ]] && return 1
+    [ -f "${binlog_dir}/${file}" ] || return 0
+    local_size=$(stat -c %s "${binlog_dir}/${file}")
+    [ "${local_size}" -lt "${pos}" ]
+}
+
+# stream_binlogs: streams forever; run in the background.
+stream_binlogs() {
+    local reset=0 file pid strikes
+    component=binlog
+    trap 'kill $(jobs -p) 2>/dev/null; exit 0' TERM INT
+
+    while true; do
+        until mysqladmin --defaults-extra-file="${repl_cnf}" --host="${primary}" --connect-timeout=5 ping --silent >/dev/null 2>&1 \
+            && check_primary; do
+            log "waiting for primary ${primary}..."
+            sleep 10 & wait $!
+        done
+
+        file="$(start_file)"
+        reset=0
+        log "streaming binary logs from ${primary}, starting at ${file}"
+
+        # --raw writes files identical to the primary's; --result-file is the
+        # destination prefix (a directory, with trailing slash).
+        mysqlbinlog --defaults-extra-file="${repl_cnf}" \
+            --read-from-remote-server --host="${primary}" \
+            --raw --stop-never \
+            --connection-server-id="${server_id}" \
+            --result-file="${binlog_dir}/" \
+            "${file}" 2> "${err_file}" &
+        pid=$!
+        echo "${pid}" > "${pid_file}"
+
+        # --- Watchdog -------------------------------------------------------
+        strikes=0
+        while kill -0 "${pid}" 2>/dev/null; do
+            sleep 60 & wait $!
+            if behind; then
+                strikes=$(( strikes + 1 ))
+                if [ "${strikes}" -ge "${watchdog_strikes}" ]; then
+                    log "stream behind the replica for ${strikes} minutes, restarting it"
+                    kill "${pid}" 2>/dev/null
+                fi
+            else
+                strikes=0
+            fi
+        done
+
+        wait "${pid}" 2>/dev/null
+        rm -f "${pid_file}"
+        grep -v 'Using a password' "${err_file}" | sed 's/^/[mysql-binlog]   /'
+
+        # --- Gap handling ---------------------------------------------------
+        if grep -q 'Could not find first log file' "${err_file}"; then
+            log "WARNING: ${file} was already purged on the primary. Point-in-time"
+            log "recovery has a GAP until the next full backup. Restarting at the"
+            log "replica's current file."
+            reset=1
+        fi
+
+        log "stream stopped, reconnecting in 10s"
+        sleep 10 & wait $!
+    done
+}
+
+# ============================================================================
+# Full backup
+# ============================================================================
+
 # wait_for_source: waits until the replica answers and replication is set up,
 # so a replica that is still cloning is never backed up.
 wait_for_source() {
-    until mysqladmin --defaults-extra-file="${client_cnf}" --host="${source_host}" ping --silent >/dev/null 2>&1 \
-        && [ -n "$(mysql --defaults-extra-file="${client_cnf}" --host="${source_host}" -N -B -e 'SHOW REPLICA STATUS' 2>/dev/null)" ]; do
+    until mysqladmin --defaults-extra-file="${root_cnf}" --host="${source_host}" ping --silent >/dev/null 2>&1 \
+        && [ -n "$(mysql --defaults-extra-file="${root_cnf}" --host="${source_host}" -N -B -e 'SHOW REPLICA STATUS' 2>/dev/null)" ]; do
         log "waiting for replica ${source_host}..."
         sleep 10 & wait $!
     done
@@ -153,16 +334,13 @@ prune() {
 
     oldest="$(find "${backup_root}" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
         -regex '.*/[0-9]{8}-[0-9]{6}' | sort | head -1)"
-    if [ -n "${oldest}" ] && [ -d "${binlog_dir}" ]; then
-        newest_binlog="$(find "${binlog_dir}" -maxdepth 1 -type f -regex '.*\.[0-9]+' -printf '%f\n' | sort | tail -1)"
+    if [ -n "${oldest}" ]; then
+        newest_binlog="$(newest_local)"
         find "${binlog_dir}" -maxdepth 1 -type f -regex '.*\.[0-9]+' ! -name "${newest_binlog}" \
             ! -newer "${oldest}/.started" -printf '[mysql-backup] removing binary log %f\n' -delete
     fi
 }
 
-# ----------------------------------------------------------------------------
-# Backup
-# ----------------------------------------------------------------------------
 run_backup() {
     local start ts target partial
     start=$(date +%s)
@@ -175,7 +353,7 @@ run_backup() {
 
     # --slave-info records the replica's replication coordinates (GTIDs) in
     # the backup; zstd compression is applied per file while copying.
-    xtrabackup --defaults-extra-file="${client_cnf}" --backup \
+    xtrabackup --defaults-extra-file="${root_cnf}" --backup \
         --host="${source_host}" \
         --target-dir="${partial}" \
         --parallel="${threads}" \
@@ -209,9 +387,6 @@ run_backup() {
     prune
 }
 
-# ----------------------------------------------------------------------------
-# Scheduler
-# ----------------------------------------------------------------------------
 # next_run: epoch of the next BACKUP_TIME (today if still ahead, else tomorrow).
 next_run() {
     local now t
@@ -221,10 +396,15 @@ next_run() {
     echo "${t}"
 }
 
+# ============================================================================
+# Main
+# ============================================================================
 trap 'log "stopping"; kill $(jobs -p) 2>/dev/null; exit 0' TERM INT
 
 # Leftovers of a backup interrupted by a stop or crash.
 rm -rf "${backup_root}"/*.partial "${backup_root}"/*.partial.log "${backup_root}/verify.tmp"
+
+stream_binlogs &
 
 wait_for_source
 if [ -z "$(latest_backup)" ]; then
@@ -239,7 +419,14 @@ while true; do
         t=$(( $(date +%s) + 3600 ))
     fi
     log "next backup at $(date -d "@${t}" '+%F %T')"
-    sleep $(( t - $(date +%s) )) & wait $!
+    # Checks every minute whether the stream asked for a backup at once.
+    while [ "$(date +%s)" -lt "${t}" ] && [ ! -f "${backup_now}" ]; do
+        sleep 60 & wait $!
+    done
+    if [ -f "${backup_now}" ]; then
+        rm -f "${backup_now}"
+        log "new primary detected, taking a backup now"
+    fi
     wait_for_source
     run_backup
 done
