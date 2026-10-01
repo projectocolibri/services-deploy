@@ -40,9 +40,9 @@ services:
       - -H
       - unix:///var/run/docker.sock
     environment:
-      # TZ: container time zone, from .env. Default: Etc/UTC.
+      # TZ: container time zone, from .env.
       # The UI shows times in the browser's time zone.
-      TZ: ${TZ:-Etc/UTC}
+      TZ: ${TZ}
     configs:
       - source: portainer-admin-password
         target: /run/portainer/admin-password

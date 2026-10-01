@@ -31,8 +31,7 @@ services:
     # Applied only when the data volume is empty (first start).
     environment:
       # TZ: container and MySQL system time zone, from .env.
-      # Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
+      TZ: ${TZ}
       # MYSQL_ROOT_PASSWORD: root account password. Required.
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       # MYSQL_USER: application user created at initialization.
@@ -49,7 +48,7 @@ services:
       MONITOR_PASSWORD: ${MYSQL_MONITOR_PASSWORD}
       # DATABASES: databases created on every start if missing, with all
       # privileges for MYSQL_USER (mysql-master-entrypoint.sh).
-      DATABASES: ${MYSQL_DATABASES:-}
+      DATABASES: ${MYSQL_DATABASES}
 
     # --------------------------------------------------------------------------
     # Startup

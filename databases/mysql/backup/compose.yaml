@@ -44,31 +44,31 @@ services:
     # Backup and stream settings
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone. Default: Etc/UTC. The XtraBackup image has no
-      # time zone data, so BACKUP_SCHEDULE and logs are always in UTC.
-      TZ: ${TZ:-Etc/UTC}
+      # TZ: container time zone. The XtraBackup image has no time zone data,
+      # so BACKUP_SCHEDULE and logs are always in UTC.
+      TZ: ${TZ}
       # BACKUP_SOURCE_HOST: replica to back up (on this server), also asked
       # where the primary's binary log is.
       BACKUP_SOURCE_HOST: mysql-replica
       # MYSQL_ROOT_PASSWORD: root password of the replica.
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       # BACKUP_SCHEDULE: cron expression of the full backups.
-      BACKUP_SCHEDULE: ${MYSQL_BACKUP_SCHEDULE:-0 2 * * *}
-      # BACKUP_RETENTION: how long backups are kept (h, d, w, M, y). Default: 7d.
-      BACKUP_RETENTION: ${MYSQL_BACKUP_RETENTION:-7d}
+      BACKUP_SCHEDULE: ${MYSQL_BACKUP_SCHEDULE}
+      # BACKUP_RETENTION: how long backups are kept (h, d, w, M, y).
+      BACKUP_RETENTION: ${MYSQL_BACKUP_RETENTION}
       # BACKUP_VERIFY: "true" decompresses and prepares a copy of every backup.
-      BACKUP_VERIFY: ${MYSQL_BACKUP_VERIFY:-true}
-      # BACKUP_THREADS: parallel copy and compression threads. Default: 2.
-      BACKUP_THREADS: ${MYSQL_BACKUP_THREADS:-2}
-      # PRIMARY_HOST: primary to stream binary logs from. Default: mysql-primary.
-      PRIMARY_HOST: ${MYSQL_REPLICA_PRIMARY_HOST:-mysql-primary}
+      BACKUP_VERIFY: ${MYSQL_BACKUP_VERIFY}
+      # BACKUP_THREADS: parallel copy and compression threads.
+      BACKUP_THREADS: ${MYSQL_BACKUP_THREADS}
+      # PRIMARY_HOST: primary to stream binary logs from.
+      PRIMARY_HOST: ${MYSQL_REPLICA_PRIMARY_HOST}
       # REPLICATION_USER: replication account on the primary.
       REPLICATION_USER: ${MYSQL_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.
       REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
       # BINLOG_SERVER_ID: server ID the stream uses on the primary; unique
-      # among all servers and streams. Default: 101.
-      BINLOG_SERVER_ID: ${MYSQL_BINLOG_SERVER_ID:-101}
+      # among all servers and streams.
+      BINLOG_SERVER_ID: ${MYSQL_BINLOG_SERVER_ID}
 
     # --------------------------------------------------------------------------
     # Startup
@@ -91,8 +91,7 @@ services:
       - mysql-replica-data:/var/lib/mysql:ro
       # Backup destination on this server: MYSQL_BACKUP_DIR (.env), with full/
       # and binlog/ inside. Relative paths are relative to this directory.
-      # Default: ./backups/mysql.
-      - ${MYSQL_BACKUP_DIR:-./backups/mysql}:/backups
+      - ${MYSQL_BACKUP_DIR}:/backups
       # Backup and stream script.
       - ./mysql-backup.sh:/usr/local/bin/mysql-backup.sh:ro
 

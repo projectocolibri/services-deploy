@@ -14,7 +14,7 @@
 # Prerequisites: - ./source: Linux export of the product (not committed)
 #                - ./jre: Linux JRE of the same architecture (not committed)
 #                - The app listening for HTTP on 0.0.0.0:8080
-# Variables:     TZ from .env.
+# Variables:     TZ and JAVA_SERVICE_EXAMPLE_LANG from .env.
 # ============================================================================
 
 services:
@@ -42,12 +42,13 @@ services:
       - "8080"
 
     # --------------------------------------------------------------------------
-    # Time zone
+    # Environment
     # --------------------------------------------------------------------------
     environment:
       # TZ: container and JVM time zone, from .env.
-      # Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
+      TZ: ${TZ}
+      # LANG: locale, from .env. Older JVMs take file.encoding from it.
+      LANG: ${JAVA_SERVICE_EXAMPLE_LANG}
 
     # --------------------------------------------------------------------------
     # Data

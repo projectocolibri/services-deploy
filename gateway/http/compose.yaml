@@ -27,17 +27,16 @@ services:
     # --------------------------------------------------------------------------
     environment:
       # TZ: time zone of access and error log timestamps, from .env.
-      # Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
+      TZ: ${TZ}
 
     # --------------------------------------------------------------------------
     # Published ports
     # --------------------------------------------------------------------------
     ports:
-      # HTTP_PORT: host port for plain HTTP (redirects to HTTPS). Default: 80.
-      - "${HTTP_PORT:-80}:80"
-      # HTTPS_PORT: host port for HTTPS. Default: 443.
-      - "${HTTPS_PORT:-443}:443"
+      # HTTP_PORT: host port for plain HTTP (redirects to HTTPS).
+      - "${HTTP_PORT}:80"
+      # HTTPS_PORT: host port for HTTPS.
+      - "${HTTPS_PORT}:443"
 
     # --------------------------------------------------------------------------
     # Configuration and certificates (read-only)

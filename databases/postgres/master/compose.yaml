@@ -35,10 +35,10 @@ services:
     # rest). Applied only when the data volume is empty (first start). No
     # POSTGRES_DB: only the built-in "postgres" database is created.
     environment:
-      # TZ: container time zone, from .env. Default: Etc/UTC.
+      # TZ: container time zone, from .env.
       # PostgreSQL's own timezone setting is fixed when the data directory is
       # initialized; changing TZ later does not change it.
-      TZ: ${TZ:-Etc/UTC}
+      TZ: ${TZ}
       # POSTGRES_USER: superuser created at initialization.
       POSTGRES_USER: ${POSTGRES_USER}
       # POSTGRES_PASSWORD: password of POSTGRES_USER. Required.
@@ -57,11 +57,11 @@ services:
       MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD}
       # APP_USER: application role created on every start if missing, owner
       # of DATABASES (postgres-master-entrypoint.sh).
-      APP_USER: ${POSTGRES_APP_USER:-}
+      APP_USER: ${POSTGRES_APP_USER}
       # APP_PASSWORD: password of APP_USER.
-      APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
       # DATABASES: databases created on every start if missing.
-      DATABASES: ${POSTGRES_DATABASES:-}
+      DATABASES: ${POSTGRES_DATABASES}
 
     # --------------------------------------------------------------------------
     # Startup
@@ -90,7 +90,7 @@ services:
       - -c
       - shared_preload_libraries=pg_stat_monitor
       - -c
-      - max_slot_wal_keep_size=${POSTGRES_MAX_SLOT_WAL_KEEP_SIZE:-10GB}
+      - max_slot_wal_keep_size=${POSTGRES_MAX_SLOT_WAL_KEEP_SIZE}
 
     # --------------------------------------------------------------------------
     # Network

@@ -45,14 +45,6 @@ FROM node:24-alpine
 COPY --from=dependencies /app/node_modules /app/node_modules
 COPY --chown=node:node source/ /app/
 
-# ----------------------------------------------------------------------------
-# Server settings
-# ----------------------------------------------------------------------------
-#   NODE_ENV  production mode (Express and most libraries skip debug work)
-#   PORT      port the app listens on; the app must read process.env.PORT
-ENV NODE_ENV=production \
-    PORT=3000
-
 # Unprivileged user provided by the Node.js image.
 USER node
 WORKDIR /app

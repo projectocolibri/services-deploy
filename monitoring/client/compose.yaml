@@ -32,9 +32,9 @@ services:
     # PMM agent settings
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from .env. Default: Etc/UTC.
+      # TZ: container time zone, from .env.
       # The image has no time zone data, so it stays on UTC.
-      TZ: ${TZ:-Etc/UTC}
+      TZ: ${TZ}
       # PMM_AGENT_SERVER_ADDRESS: PMM Server host:port.
       PMM_AGENT_SERVER_ADDRESS: ${MONITOR_SERVER_ADDRESS}
       # PMM_AGENT_SERVER_USERNAME: PMM user the agent registers as.
@@ -55,8 +55,8 @@ services:
       PMM_AGENT_PRERUN_SCRIPT: bash /usr/local/bin/pmm-client-register.sh
 
       # --- Database registration (read by pmm-client-register.sh) -----------
-      # MONITOR_DATABASES: "true" registers the databases. Default: true.
-      MONITOR_DATABASES: ${MONITOR_DATABASES:-true}
+      # MONITOR_DATABASES: "true" registers the databases.
+      MONITOR_DATABASES: ${MONITOR_DATABASES}
       # MONITOR_MYSQL_USER: MySQL monitoring account.
       MONITOR_MYSQL_USER: ${MYSQL_MONITOR_USER}
       # MONITOR_MYSQL_PASSWORD: password of MONITOR_MYSQL_USER.
@@ -111,9 +111,9 @@ services:
     # Time zone
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from .env. Default: Etc/UTC.
+      # TZ: container time zone, from .env.
       # The image has no time zone data, so it stays on UTC.
-      TZ: ${TZ:-Etc/UTC}
+      TZ: ${TZ}
 
     # --------------------------------------------------------------------------
     # Collection settings

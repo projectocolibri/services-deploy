@@ -41,17 +41,17 @@ services:
     # WireGuard configuration
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from .env. Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
+      # TZ: container time zone, from .env.
+      TZ: ${TZ}
       # SERVERURL: endpoint written into client configs (public IP or domain).
       # No default: must be set in .env.
       SERVERURL: ${VPN_HOST}
-      # SERVERPORT: port written into client configs. Default: 51820.
-      SERVERPORT: ${VPN_PORT:-51820}
+      # SERVERPORT: port written into client configs.
+      SERVERPORT: ${VPN_PORT}
       # PEERS: comma-separated client names (or a count) to generate configs for.
       PEERS: ${VPN_PEERS}
-      # INTERNAL_SUBNET: tunnel address range; server is .1. Default: 10.13.13.0.
-      INTERNAL_SUBNET: ${VPN_SUBNET:-10.13.13.0}
+      # INTERNAL_SUBNET: tunnel address range; server is .1.
+      INTERNAL_SUBNET: ${VPN_SUBNET}
       # ALLOWEDIPS: comma-separated CIDRs routed through the tunnel by clients.
       ALLOWEDIPS: ${VPN_ALLOWED_IPS}
       # PEERDNS: "auto" runs CoreDNS in the container (see config/coredns) and
@@ -76,7 +76,7 @@ services:
     # --------------------------------------------------------------------------
     # Host UDP port VPN_PORT (default 51820) to WireGuard's port in the container.
     ports:
-      - "${VPN_PORT:-51820}:51820/udp"
+      - "${VPN_PORT}:51820/udp"
 
     # --------------------------------------------------------------------------
     # Persistent state

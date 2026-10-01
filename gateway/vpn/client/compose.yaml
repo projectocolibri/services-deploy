@@ -46,17 +46,16 @@ services:
     # Tunnel settings
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from .env. Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
+      # TZ: container time zone, from .env.
+      TZ: ${TZ}
       # VPN_CLIENT_INTERFACE: name of the WireGuard interface on the host.
-      # Default: wg-services.
-      VPN_CLIENT_INTERFACE: ${VPN_CLIENT_INTERFACE:-wg-services}
+      VPN_CLIENT_INTERFACE: ${VPN_CLIENT_INTERFACE}
       # VPN_CLIENT_KEEPALIVE: seconds between keepalive packets, keeps the
-      # tunnel open through NAT and firewalls. Default: 25.
-      VPN_CLIENT_KEEPALIVE: ${VPN_CLIENT_KEEPALIVE:-25}
+      # tunnel open through NAT and firewalls.
+      VPN_CLIENT_KEEPALIVE: ${VPN_CLIENT_KEEPALIVE}
       # VPN_CLIENT_ALLOWED_IPS: networks routed through the tunnel. Empty: use
       # AllowedIPs from peer.conf (the VPN host's VPN_ALLOWED_IPS).
-      VPN_CLIENT_ALLOWED_IPS: ${VPN_CLIENT_ALLOWED_IPS:-}
+      VPN_CLIENT_ALLOWED_IPS: ${VPN_CLIENT_ALLOWED_IPS}
 
     # --------------------------------------------------------------------------
     # Startup

@@ -30,23 +30,23 @@ services:
     # Server settings
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from .env. Default: Etc/UTC.
+      # TZ: container time zone, from .env.
       # Dashboards show times in the browser's time zone regardless.
-      TZ: ${TZ:-Etc/UTC}
+      TZ: ${TZ}
       # PMM_ADMIN_PASSWORD: password of the "admin" user.
       PMM_ADMIN_PASSWORD: ${PMM_ADMIN_PASSWORD}
-      # PMM_DATA_RETENTION: how long metrics and QAN data are kept. Default: 720h.
-      PMM_DATA_RETENTION: ${PMM_DATA_RETENTION:-720h}
+      # PMM_DATA_RETENTION: how long metrics and QAN data are kept.
+      PMM_DATA_RETENTION: ${PMM_DATA_RETENTION}
       # PMM_ENABLE_UPDATES: "false" hides update checks (the image is pinned).
       PMM_ENABLE_UPDATES: "false"
       # PMM_ENABLE_TELEMETRY: "false" disables usage reporting to Percona.
       PMM_ENABLE_TELEMETRY: "false"
 
       # --- Alert email (Grafana SMTP) ---------------------------------------
-      # GF_SMTP_ENABLED: enables outgoing email. Default: false.
-      GF_SMTP_ENABLED: ${ALERT_EMAIL_ENABLED:-false}
+      # GF_SMTP_ENABLED: enables outgoing email.
+      GF_SMTP_ENABLED: ${ALERT_EMAIL_ENABLED}
       # GF_SMTP_HOST: SMTP server as host:port. Port default: 587.
-      GF_SMTP_HOST: ${SMTP_HOST}:${SMTP_PORT:-587}
+      GF_SMTP_HOST: ${SMTP_HOST}:${SMTP_PORT}
       # GF_SMTP_USER: SMTP login (empty: no authentication).
       GF_SMTP_USER: ${SMTP_USER}
       # GF_SMTP_PASSWORD: SMTP password.
@@ -56,11 +56,11 @@ services:
 
       # --- Alert Slack (Grafana contact point "Slack") ----------------------
       # ALERT_SLACK_ENABLED: "true" creates the contact point, anything else
-      # removes it (read by pmm-entrypoint.sh). Default: false.
-      ALERT_SLACK_ENABLED: ${ALERT_SLACK_ENABLED:-false}
+      # removes it (read by pmm-entrypoint.sh).
+      ALERT_SLACK_ENABLED: ${ALERT_SLACK_ENABLED}
       # SLACK_WEBHOOK_URL: incoming webhook, expanded by Grafana from this
       # environment into alerting/slack.yaml.
-      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
 
     # --------------------------------------------------------------------------
     # Startup

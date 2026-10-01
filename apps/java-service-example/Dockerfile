@@ -45,9 +45,6 @@ RUN useradd --uid 1000 --home-dir /data --create-home --shell /usr/sbin/nologin 
 COPY --chown=app:app --chmod=755 source/ /app/
 COPY --chown=app:app --chmod=755 jre/ /app/jre/
 
-# UTF-8 by default: older JVMs take file.encoding from the locale.
-ENV LANG=C.UTF-8
-
 USER app
 WORKDIR /app
 

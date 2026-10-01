@@ -2,16 +2,15 @@
 # Angular app example (server-side rendering)
 #
 # Purpose:       Runs the Angular SSR build in ./source with Node.js.
-# Role:          Internal service on port 4000: published through the HTTP
-#                gateway (gateway/http/conf.d/<app>.conf with
-#                proxy_pass http://angular-app-example:4000), or reached
-#                through the VPN at http://angular-app-example:4000.
+# Role:          Internal service on ANGULAR_APP_EXAMPLE_PORT: published
+#                through the HTTP gateway (gateway/http/conf.d/<app>.conf with
+#                proxy_pass http://angular-app-example:<port>), or reached
+#                through the VPN at http://angular-app-example:<port>.
 #                To deploy a new version, replace the files and run
 #                `docker compose up -d --build angular-app-example`.
 # Prerequisites: - ./source: content of dist/<app>/ from `ng build` (not
 #                  committed)
-#                - The public domain in NG_ALLOWED_HOSTS (./Dockerfile)
-# Variables:     TZ from .env.
+# Variables:     TZ and ANGULAR_APP_EXAMPLE_* from .env.
 # ============================================================================
 
 services:
@@ -30,16 +29,29 @@ services:
     # --------------------------------------------------------------------------
     # HTTP port
     # --------------------------------------------------------------------------
-    # Port the SSR server listens on (PORT in the Dockerfile). Exposed to the
+    # Port the SSR server listens on (PORT below), from .env. Exposed to the
     # internal network only, not published on the host: the HTTP gateway
-    # reaches it at http://angular-app-example:4000.
+    # reaches it at http://angular-app-example:<port>.
     expose:
-      - "4000"
+      - "${ANGULAR_APP_EXAMPLE_PORT}"
 
     # --------------------------------------------------------------------------
-    # Time zone
+    # Environment
     # --------------------------------------------------------------------------
     environment:
       # TZ: time zone of the server (logs, dates rendered on the server), from
-      # .env. Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
+      # .env.
+      TZ: ${TZ}
+      # Server, from .env.
+      #   NODE_ENV                mode of Express and Angular
+      #   PORT                    port the SSR server listens on (same value
+      #                           as expose above)
+      #   NG_ALLOWED_HOSTS        host names Angular renders for; other hosts
+      #                           get 400 Bad Request. * allows any host and
+      #                           leaves access control to the HTTP gateway
+      #   NG_TRUST_PROXY_HEADERS  proxy headers trusted from the HTTP gateway,
+      #                           so pages know they are served over HTTPS
+      NODE_ENV: ${ANGULAR_APP_EXAMPLE_NODE_ENV}
+      PORT: ${ANGULAR_APP_EXAMPLE_PORT}
+      NG_ALLOWED_HOSTS: ${ANGULAR_APP_EXAMPLE_ALLOWED_HOSTS}
+      NG_TRUST_PROXY_HEADERS: ${ANGULAR_APP_EXAMPLE_TRUST_PROXY_HEADERS}

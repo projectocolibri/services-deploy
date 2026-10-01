@@ -28,11 +28,11 @@ services:
     # Server list and limits
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from .env. Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
+      # TZ: container time zone, from .env.
+      TZ: ${TZ}
       # PMA_HOSTS: servers offered on the login screen (comma separated).
       PMA_HOSTS: ${MYSQL_ADMIN_HOSTS}
       # PMA_VERBOSES: display names for PMA_HOSTS, same order (comma separated).
       PMA_VERBOSES: ${MYSQL_ADMIN_HOSTS_LABELS}
-      # UPLOAD_LIMIT: maximum import file size. Default: 64M.
-      UPLOAD_LIMIT: ${MYSQL_ADMIN_UPLOAD_LIMIT:-64M}
+      # UPLOAD_LIMIT: maximum import file size.
+      UPLOAD_LIMIT: ${MYSQL_ADMIN_UPLOAD_LIMIT}

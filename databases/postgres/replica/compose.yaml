@@ -32,11 +32,11 @@ services:
     # No POSTGRES_USER / POSTGRES_PASSWORD: the data is cloned from the
     # primary (same roles), so initdb never runs here.
     environment:
-      # TZ: container time zone, from .env. Default: Etc/UTC.
+      # TZ: container time zone, from .env.
       # PostgreSQL's own timezone setting is cloned from the primary.
-      TZ: ${TZ:-Etc/UTC}
-      # PRIMARY_HOST: host to clone and stream from. Default: postgres-primary.
-      PRIMARY_HOST: ${POSTGRES_REPLICA_PRIMARY_HOST:-postgres-primary}
+      TZ: ${TZ}
+      # PRIMARY_HOST: host to clone and stream from.
+      PRIMARY_HOST: ${POSTGRES_REPLICA_PRIMARY_HOST}
       # REPLICATION_USER: replication role on the primary.
       REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.

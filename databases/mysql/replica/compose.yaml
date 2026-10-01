@@ -34,13 +34,12 @@ services:
     # No depends_on on the primary: the entrypoint waits for it by itself.
     environment:
       # TZ: container and MySQL system time zone, from .env.
-      # Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
+      TZ: ${TZ}
       # MYSQL_ROOT_PASSWORD: root password. Must equal the primary's, because
       # the clone replaces this instance's users with the primary's.
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      # PRIMARY_HOST: host to clone and follow. Default: mysql-primary.
-      PRIMARY_HOST: ${MYSQL_REPLICA_PRIMARY_HOST:-mysql-primary}
+      # PRIMARY_HOST: host to clone and follow.
+      PRIMARY_HOST: ${MYSQL_REPLICA_PRIMARY_HOST}
       # REPLICATION_USER: account on the primary used to clone and replicate.
       REPLICATION_USER: ${MYSQL_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.

@@ -392,10 +392,11 @@ Each app is a folder in `apps/` with three parts:
 | File | Purpose |
 |---|---|
 | `source/` | The app export (not committed) |
-| `Dockerfile` | Copies the export into the image and runs it, with fixed settings |
-| `compose.yaml` | The service: profiles, time zone, volumes |
+| `Dockerfile` | Copies the export into the image and runs it |
+| `compose.yaml` | The service: profiles, environment variables, volumes |
 
-Apps have no variables in `.env`: what an app runs is fixed in its Dockerfile. They are
+An app's environment variables are set in `.env` (`<APP>_*`, section 4.11 of
+`.env.example`) and passed by its `compose.yaml`; the Dockerfiles set none. Apps are
 internal; publish them through the HTTP gateway (see
 [HTTP (nginx)](#http-nginx)) or reach them through the VPN.
 
@@ -408,7 +409,8 @@ docker compose logs -f java-service-example
   rebuild: `docker compose up -d --build <app>`.
 - **Add an app**: copy the example of the same type to `apps/<app>`, rename
   the service in its `compose.yaml` (and the launcher in the Java
-  service `Dockerfile`), and include it in `apps/compose.yaml`.
+  service `Dockerfile`), copy its variables in `.env` with the new prefix, and
+  include it in `apps/compose.yaml`.
 
 ### Java service (`java-service-example`)
 
@@ -437,6 +439,8 @@ it through the HTTP gateway: in `gateway/http/conf.d/<app>.conf` use
 - The container is healthy once port 8080 accepts connections (2 minutes of
   start time allowed).
 - The launcher finds the JRE in `/app/jre` by itself: no `-vm` needed.
+- `JAVA_SERVICE_EXAMPLE_LANG=C.UTF-8`: older JVMs take `file.encoding` from
+  the locale.
 - JVM options (memory, system properties) go in the `-vmargs` of the exported
   `.ini`.
 - The workspace (`-data`) and the user's home (`/data`) are in the
@@ -455,17 +459,19 @@ it through the HTTP gateway: in `gateway/http/conf.d/<app>.conf` use
    Express and Angular: no `node_modules`.
 2. `docker compose up -d --build angular-app-example`.
 3. Publish it: in `gateway/http/conf.d/<app>.conf` use
-   `proxy_pass http://angular-app-example:4000`, and add the domain to
-   `NG_ALLOWED_HOSTS` in the Dockerfile.
+   `proxy_pass http://angular-app-example:4000`.
 
 The Dockerfile copies `source/` to `/app` and runs `node server/server.mjs`
-(Node.js 24) on port 4000.
+(Node.js 24). Settings, in `.env`:
 
-- `NG_ALLOWED_HOSTS` lists the host names Angular renders for; requests for
-  any other host get `400 Bad Request`. Default:
-  `localhost,angular-app-example`.
-- `NG_TRUST_PROXY_HEADERS=x-forwarded-proto` lets pages rendered behind the
-  HTTP gateway know they are served over HTTPS.
+- `ANGULAR_APP_EXAMPLE_PORT` (4000): port of the SSR server.
+- `ANGULAR_APP_EXAMPLE_NODE_ENV` (`production`).
+- `ANGULAR_APP_EXAMPLE_ALLOWED_HOSTS=*` (`NG_ALLOWED_HOSTS`) lets Angular
+  render for any host. Access is controlled by the HTTP gateway: only the
+  domains in its `server_name` reach the app.
+- `ANGULAR_APP_EXAMPLE_TRUST_PROXY_HEADERS=x-forwarded-proto`
+  (`NG_TRUST_PROXY_HEADERS`) lets pages rendered behind the HTTP gateway know
+  they are served over HTTPS.
 
 ### Node.js app (`nodejs-app-example`)
 
@@ -481,10 +487,12 @@ The Dockerfile installs the production dependencies with
 separate stage), copies `source/` to `/app` and runs `node .` (Node.js 24),
 which starts the file in `"main"` of `package.json`.
 
-- The app must listen on `process.env.PORT` (3000) on all interfaces: a
-  server bound to `localhost` is unreachable from other containers.
-- `NODE_ENV=production`. Other settings go in the Dockerfile's `ENV`, like the
-  other examples; a local `.env` in `source/` is not copied into the image.
+- The app must listen on `process.env.PORT` (`NODEJS_APP_EXAMPLE_PORT`, 3000)
+  on all interfaces: a server bound to `localhost` is unreachable from other
+  containers.
+- `NODEJS_APP_EXAMPLE_NODE_ENV=production`. Other settings: add a
+  `NODEJS_APP_EXAMPLE_*` variable to `.env` and pass it in `compose.yaml`; a
+  local `.env` in `source/` is not copied into the image.
 - `devDependencies` are not installed: anything needed at runtime belongs in
   `dependencies`.
 
@@ -565,5 +573,5 @@ Same for `postgres-replica-db` / `<PROJECT_NAME>_postgres-replica-data`.
 - [ ] `MYSQL_BACKUP_DIR` / `POSTGRES_BACKUP_DIR` on a separate disk, backup
       services healthy, and a test restore done
 - [ ] Off-site copy of the backup directories
-- [ ] Apps: exports in `source/` (and JREs in `jre/`), public domains in
-      `NG_ALLOWED_HOSTS`, apps running
+- [ ] Apps: exports in `source/` (and JREs in `jre/`), app variables
+      in `.env`, apps running

@@ -45,24 +45,24 @@ services:
     # Backup and stream settings
     # --------------------------------------------------------------------------
     environment:
-      # TZ: time zone of BACKUP_SCHEDULE and log timestamps. Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
+      # TZ: time zone of BACKUP_SCHEDULE and log timestamps.
+      TZ: ${TZ}
       # BACKUP_SOURCE_HOST: standby to back up (on this server).
       BACKUP_SOURCE_HOST: postgres-replica
-      # PRIMARY_HOST: primary to stream WAL from. Default: postgres-primary.
-      PRIMARY_HOST: ${POSTGRES_REPLICA_PRIMARY_HOST:-postgres-primary}
+      # PRIMARY_HOST: primary to stream WAL from.
+      PRIMARY_HOST: ${POSTGRES_REPLICA_PRIMARY_HOST}
       # REPLICATION_USER: replication role.
       REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.
       REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
-      # WAL_SLOT: replication slot on the primary. Default: backup_wal.
-      WAL_SLOT: ${POSTGRES_WAL_SLOT:-backup_wal}
+      # WAL_SLOT: replication slot on the primary.
+      WAL_SLOT: ${POSTGRES_WAL_SLOT}
       # BACKUP_SCHEDULE: cron expression of the base backups.
-      BACKUP_SCHEDULE: ${POSTGRES_BACKUP_SCHEDULE:-30 2 * * *}
-      # BACKUP_RETENTION: how long backups are kept (h, d, w, M, y). Default: 7d.
-      BACKUP_RETENTION: ${POSTGRES_BACKUP_RETENTION:-7d}
+      BACKUP_SCHEDULE: ${POSTGRES_BACKUP_SCHEDULE}
+      # BACKUP_RETENTION: how long backups are kept (h, d, w, M, y).
+      BACKUP_RETENTION: ${POSTGRES_BACKUP_RETENTION}
       # BACKUP_VERIFY: "true" checks every backup with pg_verifybackup.
-      BACKUP_VERIFY: ${POSTGRES_BACKUP_VERIFY:-true}
+      BACKUP_VERIFY: ${POSTGRES_BACKUP_VERIFY}
 
     # --------------------------------------------------------------------------
     # Startup
@@ -83,8 +83,7 @@ services:
     volumes:
       # Backup destination on this server: POSTGRES_BACKUP_DIR (.env), with
       # base/ and wal/ inside. Relative paths are relative to this directory.
-      # Default: ./backups/postgres.
-      - ${POSTGRES_BACKUP_DIR:-./backups/postgres}:/backups
+      - ${POSTGRES_BACKUP_DIR}:/backups
       # Backup and stream script.
       - ./postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro
 

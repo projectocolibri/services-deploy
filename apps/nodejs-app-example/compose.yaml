@@ -11,7 +11,8 @@
 # Prerequisites: - ./source: the app with package.json and package-lock.json
 #                  (not committed); dependencies are installed in the image
 #                - The app listens on process.env.PORT, on all interfaces
-# Variables:     TZ from .env.
+# Variables:     TZ, NODEJS_APP_EXAMPLE_NODE_ENV and NODEJS_APP_EXAMPLE_PORT
+#                from .env.
 # ============================================================================
 
 services:
@@ -30,15 +31,22 @@ services:
     # --------------------------------------------------------------------------
     # HTTP port
     # --------------------------------------------------------------------------
-    # Port the app listens on (PORT in the Dockerfile). Exposed to the
+    # Port the app listens on (PORT below), from .env. Exposed to the
     # internal network only, not published on the host: the HTTP gateway
-    # reaches it at http://nodejs-app-example:3000.
+    # reaches it at http://nodejs-app-example:<port>.
     expose:
-      - "3000"
+      - "${NODEJS_APP_EXAMPLE_PORT}"
 
     # --------------------------------------------------------------------------
-    # Time zone
+    # Environment
     # --------------------------------------------------------------------------
     environment:
-      # TZ: time zone of the app (logs, dates), from .env. Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
+      # TZ: time zone of the app (logs, dates), from .env.
+      TZ: ${TZ}
+      # Server.
+      #   NODE_ENV  mode of the app and its libraries (Express, etc.), from
+      #             .env
+      #   PORT      port the app listens on, from .env (same value as
+      #             expose above)
+      NODE_ENV: ${NODEJS_APP_EXAMPLE_NODE_ENV}
+      PORT: ${NODEJS_APP_EXAMPLE_PORT}

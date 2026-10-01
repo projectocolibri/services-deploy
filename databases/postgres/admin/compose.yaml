@@ -30,8 +30,8 @@ services:
     # Login and server list
     # --------------------------------------------------------------------------
     environment:
-      # TZ: container time zone, from .env. Default: Etc/UTC.
-      TZ: ${TZ:-Etc/UTC}
+      # TZ: container time zone, from .env.
+      TZ: ${TZ}
       # PGADMIN_DEFAULT_EMAIL: initial administrator login (first start only).
       PGADMIN_DEFAULT_EMAIL: ${POSTGRES_ADMIN_EMAIL}
       # PGADMIN_DEFAULT_PASSWORD: initial administrator password (first start only).

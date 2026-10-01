@@ -27,12 +27,12 @@ services:
     # Mode and settings
     # --------------------------------------------------------------------------
     # DOZZLE_MODE: empty runs the web UI on port 8080; "agent" runs an agent on
-    # port 7007. Default: empty.
-    command: ${DOZZLE_MODE:-}
+    # port 7007.
+    command: ${DOZZLE_MODE}
     environment:
-      # TZ: container time zone, from .env. Default: Etc/UTC.
+      # TZ: container time zone, from .env.
       # The UI shows times in the browser's time zone.
-      TZ: ${TZ:-Etc/UTC}
+      TZ: ${TZ}
       # DOZZLE_NO_ANALYTICS: "true" disables anonymous usage reporting.
       DOZZLE_NO_ANALYTICS: "true"
       # DOZZLE_REMOTE_AGENT: agents shown in this UI (comma-separated
