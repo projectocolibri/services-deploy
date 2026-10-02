@@ -4,8 +4,9 @@
 # Purpose:       Web UI to browse and manage the PostgreSQL primary and
 #                replica.
 # Role:          Internal tool, reachable only through the VPN at
-#                http://postgres-admin (no published ports). The server list
-#                is rebuilt from POSTGRES_ADMIN_HOSTS on every start.
+#                http://postgres-admin:<POSTGRES_ADMIN_PORT> (no published
+#                ports). The server list is rebuilt from POSTGRES_ADMIN_HOSTS
+#                on every start.
 # Prerequisites: - VPN connection
 #                - pgadmin-entrypoint.sh next to this file
 # Variables:     POSTGRES_ADMIN_EMAIL, POSTGRES_ADMIN_PASSWORD,
@@ -48,6 +49,8 @@ services:
       # PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True" replaces the stored server
       # list with the file on every start, so POSTGRES_ADMIN_HOSTS changes apply.
       PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+      # PGADMIN_LISTEN_PORT: internal HTTP port, from .env.
+      PGADMIN_LISTEN_PORT: ${POSTGRES_ADMIN_PORT}
 
     # --------------------------------------------------------------------------
     # Startup

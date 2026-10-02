@@ -61,7 +61,8 @@ compose.yaml                 includes every stack, defines the network
 gateway/
   vpn/host/                  WireGuard VPN server (server with the primaries)
   vpn/client/                WireGuard peer for replica-only servers
-  http/                      nginx for public apps (conf.d/, certs/)
+  http/                      nginx for public apps and internal sites
+                             (conf.d/, certs/, internal-ca.sh)
 monitoring/
   pmm/                       PMM Server, custom dashboards, Slack alerts
   client/                    PMM client and cAdvisor
@@ -184,11 +185,11 @@ tools on `127.0.0.1`:
 ```yaml
 services:
   pmm-server:
-    ports: ["127.0.0.1:8443:8443"]
+    ports: ["127.0.0.1:8081:8080"]
   dozzle:
-    ports: ["127.0.0.1:8888:8080"]
+    ports: ["127.0.0.1:8082:8080"]
   portainer:
-    ports: ["127.0.0.1:9443:9443"]
+    ports: ["127.0.0.1:8083:8080"]
 ```
 
 ## Gateway
@@ -247,13 +248,41 @@ on its own network.
 
 ### HTTP (nginx)
 
-Public web apps. Requests for unknown hosts are refused.
+The single entry point for web traffic: public apps and internal sites (apps
+and admin tools on internal host names). TLS ends here; every service behind
+it serves plain HTTP on the port set in its `*_PORT` variable in `.env`
+(**8080** for all by default). Requests for unknown hosts are refused.
+
+**Public app**
 
 1. Copy `gateway/http/conf.d/app.conf.example` to `<app>.conf` and set the
    domain and upstream (`proxy_pass http://<service>:<port>`).
 2. Put the certificate in `gateway/http/certs/<domain>/fullchain.pem` and
    `privkey.pem`.
 3. Reload: `docker compose exec http nginx -s reload`.
+
+**Internal sites** (e.g. `https://pmm.monitor.example.lan`)
+
+1. Copy `gateway/http/conf.d/internal.conf.example` to `<name>.conf` and
+   replace `example.lan` with your internal domain. Its map lists one host
+   name per service, on port 8080; change a line if you changed that
+   service's `*_PORT` (nginx does not read `.env`).
+2. Issue a certificate from the internal CA (created on the first run):
+
+   ```sh
+   cd gateway/http
+   ./internal-ca.sh example.lan '*.apps.example.lan' '*.mysql.example.lan' \
+     '*.postgres.example.lan' '*.monitor.example.lan'
+   ```
+
+   Install `gateway/http/certs/internal-ca/ca.crt` as a trusted root CA on
+   every client. Never share `ca.key`.
+3. Point the names at this server in your internal DNS (LAN DNS, or the VPN
+   clients' hosts file).
+4. Reload: `docker compose exec http nginx -s reload`.
+
+Only private networks (LAN, VPN, Docker) are allowed. VPN clients can still
+reach the containers directly by service name (`http://<service>:<port>`).
 
 ## Databases
 
@@ -305,9 +334,10 @@ a new volume to change:
 
 ### Admin panels
 
-phpMyAdmin (`http://mysql-admin`) and pgAdmin (`http://postgres-admin`) list
-the servers in `MYSQL_ADMIN_HOSTS` / `POSTGRES_ADMIN_HOSTS` (labels in
-`*_ADMIN_HOSTS_LABELS`).
+phpMyAdmin (`http://mysql-admin:8080`) and pgAdmin
+(`http://postgres-admin:8080`), or their internal sites through the HTTP
+gateway, list the servers in `MYSQL_ADMIN_HOSTS` / `POSTGRES_ADMIN_HOSTS`
+(labels in `*_ADMIN_HOSTS_LABELS`).
 
 ### Backups
 
@@ -504,9 +534,9 @@ which starts the file in `"main"` of `package.json`.
 
 | Tool | What it shows | URL (through the VPN) |
 |---|---|---|
-| **PMM** | Server resources, MySQL / PostgreSQL dashboards and replication, Query Analytics, per-container metrics, alerts | `https://pmm-server:8443` (user `admin`) |
+| **PMM** | Server resources, MySQL / PostgreSQL dashboards and replication, Query Analytics, per-container metrics, alerts | `http://pmm-server:8080` (user `admin`) |
 | **Dozzle** | Live logs of every container | `http://dozzle:8080` |
-| **Portainer** | Containers, images, volumes and networks; start / stop / restart, console, stats | `https://portainer:9443` (user `admin`) |
+| **Portainer** | Containers, images, volumes and networks; start / stop / restart, console, stats | `http://portainer:8080` (user `admin`) |
 
 - The PMM client registers the server as a node named after its hostname, and
   its cAdvisor as `cadvisor-<hostname>`.

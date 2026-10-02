@@ -1,0 +1,125 @@
+# ============================================================================
+# nginx internal sites example (*.example.lan)
+#
+# Purpose:       Template for publishing the apps and the admin tools on
+#                internal host names over HTTPS, e.g.
+#                https://java-service.apps.example.lan -> java-service-example
+#                https://pmm.monitor.example.lan       -> pmm-server
+# Role:          Not loaded as-is (only *.conf files are). Copy it to
+#                <name>.conf in this directory, replace example.lan with the
+#                internal domain, then reload nginx:
+#                  docker compose exec http nginx -s reload
+#                One HTTPS server for every host below; the map picks the
+#                container from the requested host. Hosts not in the map are
+#                refused. To add a site, add a line to the map (and its domain
+#                to server_name and the certificate if it is a new group).
+# Prerequisites: - Internal DNS (LAN or VPN) resolving these names to this
+#                  server
+#                - Certificate in certs/example.lan/ from the internal CA
+#                  (../internal-ca.sh), its ca.crt trusted on every client:
+#                    ./internal-ca.sh example.lan \
+#                      '*.apps.example.lan' '*.mysql.example.lan' \
+#                      '*.postgres.example.lan' '*.monitor.example.lan'
+#                - Every service listening on the port in its map line: its
+#                  *_PORT in .env (8080 for all by default)
+#
+# Values to replace:
+#   example.lan                 internal domain (map, server_name, cert paths)
+#   $internal_upstream          map variable; rename it if several copies of
+#                               this file are loaded
+#
+# nginx variables used (set by nginx per request):
+#   $host                      requested host name
+#   $request_uri               original path and query string
+#   $remote_addr               IP address of the client
+#   $proxy_add_x_forwarded_for incoming X-Forwarded-For plus $remote_addr
+#   $scheme                    http or https
+#   $http_upgrade              client's Upgrade header (WebSocket handshake)
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Host name -> container URL
+# ----------------------------------------------------------------------------
+# Every service: plain HTTP on its *_PORT from .env (TLS ends here). nginx
+# does not read .env: change a line here when you change that port.
+map $host $internal_upstream {
+    default                                 "";
+
+    # Apps
+    java-service.apps.example.lan           http://java-service-example:8080;
+    angular.apps.example.lan                http://angular-app-example:8080;
+    nodejs.apps.example.lan                 http://nodejs-app-example:8080;
+
+    # Databases: admin panels
+    admin.mysql.example.lan                 http://mysql-admin:8080;
+    admin.postgres.example.lan              http://postgres-admin:8080;
+
+    # Monitoring
+    pmm.monitor.example.lan                 http://pmm-server:8080;
+    logs.monitor.example.lan                http://dozzle:8080;
+    portainer.monitor.example.lan           http://portainer:8080;
+}
+
+# ----------------------------------------------------------------------------
+# HTTP to HTTPS redirect
+# ----------------------------------------------------------------------------
+server {
+    listen 80;
+    server_name *.apps.example.lan *.mysql.example.lan
+                *.postgres.example.lan *.monitor.example.lan;
+    return 301 https://$host$request_uri;
+}
+
+# ----------------------------------------------------------------------------
+# HTTPS server
+# ----------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name *.apps.example.lan *.mysql.example.lan
+                *.postgres.example.lan *.monitor.example.lan;
+
+    # --- TLS ---------------------------------------------------------------
+    # Wildcard certificate signed by the internal CA (../internal-ca.sh).
+    ssl_certificate     /etc/nginx/certs/example.lan/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/example.lan/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    # --- Access ------------------------------------------------------------
+    # Internal names: private networks only (LAN, VPN and Docker).
+    allow 10.0.0.0/8;
+    allow 172.16.0.0/12;
+    allow 192.168.0.0/16;
+    deny  all;
+
+    # --- Request limits ----------------------------------------------------
+    # Largest accepted request body; matches phpMyAdmin's import limit
+    # (MYSQL_ADMIN_UPLOAD_LIMIT in .env).
+    client_max_body_size 64m;
+
+    # --- Reverse proxy -----------------------------------------------------
+    # Docker's DNS, so names are resolved per request: nginx starts even when
+    # a container is stopped (that site answers 502 until it is up).
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    location / {
+        # Host in the wildcard but not in the map: close the connection.
+        if ($internal_upstream = "") {
+            return 444;
+        }
+        proxy_pass $internal_upstream;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+
+        # Live streams (Dozzle logs, PMM and Portainer consoles): pass data
+        # through as it arrives, and keep idle streams open.
+        proxy_buffering    off;
+        proxy_read_timeout 1h;
+    }
+}

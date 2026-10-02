@@ -2,9 +2,11 @@
 # ============================================================================
 # PMM Server entrypoint wrapper
 #
-# Purpose:       Enables or disables the Slack contact point from .env, then
-#                starts PMM Server.
-# Role:          Grafana has no setting to turn a contact point on or off:
+# Purpose:       Sets the web UI's HTTP port and enables or disables the Slack
+#                contact point from .env, then starts PMM Server.
+# Role:          PMM has no setting for its HTTP port (fixed at 8080 in its
+#                nginx config), so the listen line is rewritten on every start.
+#                Grafana has no setting to turn a contact point on or off:
 #                - enabled:  the provisioning file is copied into Grafana's
 #                            provisioning directory, which creates or updates
 #                            the contact point on start
@@ -18,6 +20,8 @@
 #                curl). The Slack provisioning file mounted at SLACK_SOURCE.
 #
 # Variables:
+#   HTTP_PORT            (env) plain HTTP port of the web UI (PMM_HTTP_PORT)
+#   NGINX_CONF           (local) PMM's nginx site config
 #   ALERT_SLACK_ENABLED  (env) "true" installs the Slack contact point
 #   SLACK_WEBHOOK_URL    (env) incoming webhook; required when enabled
 #   PMM_ADMIN_PASSWORD   (env) Grafana admin password, for the API call
@@ -28,6 +32,7 @@
 #   "$@"                 (args) command passed to the image entrypoint
 # ============================================================================
 
+NGINX_CONF=/etc/nginx/conf.d/pmm.conf
 SLACK_SOURCE=/etc/pmm-alerting/slack.yaml
 SLACK_TARGET=/usr/share/grafana/conf/provisioning/alerting/slack.yaml
 GRAFANA_API=http://127.0.0.1:3000/graph/api
@@ -56,6 +61,20 @@ remove_slack() {
         *) log "WARNING: could not remove the Slack contact point (HTTP ${code})" ;;
     esac
 }
+
+# ----------------------------------------------------------------------------
+# HTTP port
+# ----------------------------------------------------------------------------
+# Replaces the plain HTTP listen line (8080 in the image, or the port of the
+# previous start); the HTTPS line (listen 8443 ssl) is left alone.
+if [ -n "${HTTP_PORT}" ]; then
+    if grep -qE '^[[:space:]]*listen [0-9]+;' "${NGINX_CONF}"; then
+        sed -i -E "s/^([[:space:]]*)listen [0-9]+;/\1listen ${HTTP_PORT};/" "${NGINX_CONF}"
+        log "Web UI on HTTP port ${HTTP_PORT}"
+    else
+        log "WARNING: no HTTP listen line in ${NGINX_CONF}: HTTP_PORT ignored"
+    fi
+fi
 
 # ----------------------------------------------------------------------------
 # Slack contact point

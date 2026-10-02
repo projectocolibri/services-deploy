@@ -4,12 +4,12 @@
 # Purpose:       Web UI that streams the live logs of every container.
 # Role:          Reads logs directly from the Docker socket; nothing is stored.
 #                One server runs the web UI (reachable only through the VPN at
-#                http://dozzle:8080); other servers can run it as an agent that
-#                streams their logs to that UI.
+#                http://dozzle:<DOZZLE_PORT>); other servers can run it as an
+#                agent that streams their logs to that UI.
 # Prerequisites: - Docker socket on the host at /var/run/docker.sock
 #                - Docker log rotation configured on the host, since Dozzle
 #                  shows what Docker keeps
-# Variables:     DOZZLE_MODE, DOZZLE_REMOTE_AGENTS.
+# Variables:     DOZZLE_MODE, DOZZLE_PORT, DOZZLE_REMOTE_AGENTS.
 #                TZ from .env.
 # ============================================================================
 
@@ -26,13 +26,15 @@ services:
     # --------------------------------------------------------------------------
     # Mode and settings
     # --------------------------------------------------------------------------
-    # DOZZLE_MODE: empty runs the web UI on port 8080; "agent" runs an agent on
-    # port 7007.
+    # DOZZLE_MODE: empty runs the web UI on DOZZLE_PORT; "agent" runs an agent
+    # on port 7007.
     command: ${DOZZLE_MODE}
     environment:
       # TZ: container time zone, from .env.
       # The UI shows times in the browser's time zone.
       TZ: ${TZ}
+      # DOZZLE_ADDR: address the web UI listens on (:port), from .env.
+      DOZZLE_ADDR: ":${DOZZLE_PORT}"
       # DOZZLE_NO_ANALYTICS: "true" disables anonymous usage reporting.
       DOZZLE_NO_ANALYTICS: "true"
       # DOZZLE_REMOTE_AGENT: agents shown in this UI (comma-separated

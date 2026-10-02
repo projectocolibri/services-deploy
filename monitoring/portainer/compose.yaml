@@ -6,14 +6,14 @@
 #                stats and logs.
 # Role:          Talks to Docker through the socket, so it has full control of
 #                this server's Docker (root-equivalent). Reachable only through
-#                the VPN at https://portainer:9443 (self-signed certificate).
+#                the VPN at http://portainer:<PORTAINER_PORT>.
 #                The deployment itself is still managed with `docker compose`
 #                from this repository: containers changed or created in
 #                Portainer are replaced by the next `docker compose up -d`.
 # Prerequisites: - Docker socket on the host at /var/run/docker.sock
 #                - PORTAINER_ADMIN_PASSWORD set before the first start
 #                  (12+ characters)
-# Variables:     PORTAINER_ADMIN_PASSWORD.
+# Variables:     PORTAINER_ADMIN_PASSWORD, PORTAINER_PORT.
 #                TZ from .env.
 # ============================================================================
 
@@ -35,8 +35,12 @@ services:
     #   to the password are made in the UI; the file is ignored once the user
     #   exists.
     # -H: manage this server's Docker through the mounted socket.
+    # --http-enabled / --bind: serve the UI over plain HTTP on PORTAINER_PORT
+    #   (TLS ends at the HTTP gateway).
     command:
       - --admin-password-file=/run/portainer/admin-password
+      - --http-enabled
+      - --bind=:${PORTAINER_PORT}
       - -H
       - unix:///var/run/docker.sock
     environment:
@@ -50,7 +54,8 @@ services:
     # --------------------------------------------------------------------------
     # Docker access and storage
     # --------------------------------------------------------------------------
-    # No published ports: reachable only through the VPN (9443, HTTPS).
+    # No published ports: reachable only through the VPN (PORTAINER_PORT,
+    # HTTP).
     volumes:
       # Docker socket: read/write, Portainer manages containers through it.
       - /var/run/docker.sock:/var/run/docker.sock

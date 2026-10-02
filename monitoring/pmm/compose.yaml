@@ -6,11 +6,15 @@
 #                alerting.
 # Role:          PMM clients register their node, containers (cAdvisor) and
 #                databases here. One PMM Server for the whole deployment.
-#                Reachable only through the VPN at https://pmm-server:8443.
+#                Reachable only through the VPN at
+#                http://pmm-server:<PMM_HTTP_PORT> (the web UI also answers on
+#                8443 with a self-signed certificate; PMM clients connect
+#                there, over TLS).
 # Prerequisites: - 2+ CPU cores and 4+ GB RAM, plus disk for PMM_DATA_RETENTION
 #                - PMM_ADMIN_PASSWORD set before the first start
 #                - pmm-entrypoint.sh and alerting/slack.yaml next to this file
-# Variables:     PMM_ADMIN_PASSWORD, PMM_DATA_RETENTION, ALERT_EMAIL_ENABLED,
+# Variables:     PMM_HTTP_PORT, PMM_ADMIN_PASSWORD, PMM_DATA_RETENTION,
+#                ALERT_EMAIL_ENABLED,
 #                SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM,
 #                ALERT_SLACK_ENABLED, SLACK_WEBHOOK_URL.
 #                TZ from .env.
@@ -41,6 +45,10 @@ services:
       PMM_ENABLE_UPDATES: "false"
       # PMM_ENABLE_TELEMETRY: "false" disables usage reporting to Percona.
       PMM_ENABLE_TELEMETRY: "false"
+      # HTTP_PORT: plain HTTP port of the web UI, from .env; pmm-entrypoint.sh
+      # writes it into PMM's nginx config (PMM has no setting for it). Not
+      # named PMM_*: PMM reads that prefix as its own settings.
+      HTTP_PORT: ${PMM_HTTP_PORT}
 
       # --- Alert email (Grafana SMTP) ---------------------------------------
       # GF_SMTP_ENABLED: enables outgoing email.
@@ -65,8 +73,8 @@ services:
     # --------------------------------------------------------------------------
     # Startup
     # --------------------------------------------------------------------------
-    # Installs or removes the Slack contact point, then runs the image
-    # entrypoint (/opt/entrypoint.sh).
+    # Sets the HTTP port, installs or removes the Slack contact point, then
+    # runs the image entrypoint (/opt/entrypoint.sh).
     entrypoint: ["/bin/bash", "/usr/local/bin/pmm-entrypoint.sh"]
 
     # --------------------------------------------------------------------------
@@ -89,10 +97,10 @@ services:
     # --------------------------------------------------------------------------
     # Health check
     # --------------------------------------------------------------------------
-    # Healthy once PMM's readiness endpoint answers (self-signed TLS, -k).
+    # Healthy once PMM's readiness endpoint answers on the HTTP port.
     # PMM takes a while to start, hence the long start period.
     healthcheck:
-      test: ["CMD-SHELL", "curl -sfk https://127.0.0.1:8443/v1/server/readyz"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:${PMM_HTTP_PORT}/v1/server/readyz"]
       interval: 10s
       timeout: 5s
       retries: 12
