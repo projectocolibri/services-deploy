@@ -4,17 +4,18 @@
 # Purpose:       Image with a Java application and its JRE, ready to run.
 # Role:          Copies the Linux export (./source) to /app and the JRE
 #                (./jre.tar.gz) to /app/jre, where the launcher finds it, and
-#                runs the launcher. The app serves HTTP on port 8080 (exposed
-#                in compose.yaml). To deploy a new version, replace the files
-#                and rebuild:
+#                runs the launcher. The app serves HTTP on
+#                JAVA_SERVICE_EXAMPLE_PORT (exposed in compose.yaml). To
+#                deploy a new version, replace the files and rebuild:
 #                  docker compose up -d --build java-service-example
 # Prerequisites: - Build context: this directory (compose.yaml sets it)
 #                - ./source: Linux export of the application, with the launcher
 #                  java-service-example and java-service-example.ini
 #                - ./jre.tar.gz: Linux JRE of the launcher's architecture,
 #                  with everything under a top folder jre/ (jre/bin/java)
-#                - The app's HTTP server configured to listen on port 8080,
-#                  on all interfaces (0.0.0.0), not only localhost
+#                - The app's HTTP server configured to listen on
+#                  JAVA_SERVICE_EXAMPLE_PORT, on all interfaces (0.0.0.0),
+#                  not only localhost
 # Variables:     None.
 # ============================================================================
 

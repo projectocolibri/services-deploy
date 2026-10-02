@@ -430,14 +430,17 @@ and runs:
 ./java-service-example -nosplash -consoleLog -data /data/workspace
 ```
 
-The app serves HTTP on port **8080**, inside the Docker network only. Publish
-it through the HTTP gateway: in `gateway/http/conf.d/<app>.conf` use
-`proxy_pass http://java-service-example:8080`. Through the VPN it is at
-`http://java-service-example:8080`.
+The app serves HTTP on `JAVA_SERVICE_EXAMPLE_PORT` (default **8080**), inside
+the Docker network only. Publish it through the HTTP gateway: in
+`gateway/http/conf.d/<app>.conf` use
+`proxy_pass http://java-service-example:<port>`. Through the VPN it is at
+`http://java-service-example:<port>`.
 
-- Configure the app's HTTP server to listen on `0.0.0.0:8080`: a server
-  bound to `localhost` is unreachable from other containers.
-- The container is healthy once port 8080 accepts connections (2 minutes of
+- Configure the app's HTTP server to listen on `0.0.0.0` and on the same port
+  as `JAVA_SERVICE_EXAMPLE_PORT`: the variable only tells Docker and the
+  health check which port to use, it does not change the app. A server bound
+  to `localhost` is unreachable from other containers.
+- The container is healthy once the port accepts connections (2 minutes of
   start time allowed).
 - The launcher finds the JRE in `/app/jre` by itself: no `-vm` needed.
 - `JAVA_SERVICE_EXAMPLE_LANG=C.UTF-8`: older JVMs take `file.encoding` from
@@ -460,12 +463,12 @@ it through the HTTP gateway: in `gateway/http/conf.d/<app>.conf` use
    Express and Angular: no `node_modules`.
 2. `docker compose up -d --build angular-app-example`.
 3. Publish it: in `gateway/http/conf.d/<app>.conf` use
-   `proxy_pass http://angular-app-example:4000`.
+   `proxy_pass http://angular-app-example:8080`.
 
 The Dockerfile copies `source/` to `/app` and runs `node server/server.mjs`
 (Node.js 24). Settings, in `.env`:
 
-- `ANGULAR_APP_EXAMPLE_PORT` (4000): port of the SSR server.
+- `ANGULAR_APP_EXAMPLE_PORT` (8080): port of the SSR server.
 - `ANGULAR_APP_EXAMPLE_NODE_ENV` (`production`).
 - `ANGULAR_APP_EXAMPLE_ALLOWED_HOSTS=*` (`NG_ALLOWED_HOSTS`) lets Angular
   render for any host. Access is controlled by the HTTP gateway: only the
@@ -481,14 +484,14 @@ The Dockerfile copies `source/` to `/app` and runs `node server/server.mjs`
    apps, the compiled output). `node_modules` is not needed.
 2. `docker compose up -d --build nodejs-app-example`.
 3. Publish it: in `gateway/http/conf.d/<app>.conf` use
-   `proxy_pass http://nodejs-app-example:3000`.
+   `proxy_pass http://nodejs-app-example:8080`.
 
 The Dockerfile installs the production dependencies with
 `npm ci --omit=dev` (for Linux, with build tools for native addons in a
 separate stage), copies `source/` to `/app` and runs `node .` (Node.js 24),
 which starts the file in `"main"` of `package.json`.
 
-- The app must listen on `process.env.PORT` (`NODEJS_APP_EXAMPLE_PORT`, 3000)
+- The app must listen on `process.env.PORT` (`NODEJS_APP_EXAMPLE_PORT`, 8080)
   on all interfaces: a server bound to `localhost` is unreachable from other
   containers.
 - `NODEJS_APP_EXAMPLE_NODE_ENV=production`. Other settings: add a

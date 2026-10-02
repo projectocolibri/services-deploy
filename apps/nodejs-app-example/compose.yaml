@@ -2,10 +2,10 @@
 # Node.js app example
 #
 # Purpose:       Runs the Node.js application in ./source.
-# Role:          Internal service on port 3000: published through the HTTP
+# Role:          Internal service on port 8080: published through the HTTP
 #                gateway (gateway/http/conf.d/<app>.conf with
-#                proxy_pass http://nodejs-app-example:3000), or reached
-#                through the VPN at http://nodejs-app-example:3000.
+#                proxy_pass http://nodejs-app-example:8080), or reached
+#                through the VPN at http://nodejs-app-example:8080.
 #                To deploy a new version, replace the files and run
 #                `docker compose up -d --build nodejs-app-example`.
 # Prerequisites: - ./source: the app with package.json and package-lock.json

@@ -13,7 +13,7 @@
 #
 # Values to replace:
 #   app.example.com  public domain of the app (server_name and cert paths)
-#   app:3000         internal service name and container port of the app
+#   app:8080         internal service name and container port of the app
 #   10m              maximum request body size (uploads)
 #
 # nginx variables used (set by nginx per request):
@@ -58,7 +58,7 @@ server {
     # --- Reverse proxy -----------------------------------------------------
     location / {
         # Internal service name and container port (plain HTTP inside Docker).
-        proxy_pass http://app:3000;
+        proxy_pass http://app:8080;
 
         # HTTP/1.1 upstream connections (required for WebSockets).
         proxy_http_version 1.1;

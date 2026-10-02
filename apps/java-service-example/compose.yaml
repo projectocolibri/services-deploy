@@ -2,7 +2,8 @@
 # Java service example
 #
 # Purpose:       Runs a Java application exported for Linux, with its
-#                own JRE, as an internal HTTP service on port 8080.
+#                own JRE, as an internal HTTP service on
+#                JAVA_SERVICE_EXAMPLE_PORT.
 # Role:          The image contains the export (./source -> /app) and the
 #                extracted JRE (./jre.tar.gz -> /app/jre), and runs the
 #                launcher (see ./Dockerfile). To deploy a new version, replace
@@ -10,13 +11,15 @@
 #                `docker compose up -d --build java-service-example`.
 #                Not published on the host: reached through the HTTP gateway
 #                (gateway/http/conf.d/<app>.conf with
-#                proxy_pass http://java-service-example:8080), or through the
-#                VPN at http://java-service-example:8080.
+#                proxy_pass http://java-service-example:<port>), or through
+#                the VPN at http://java-service-example:<port>.
 # Prerequisites: - ./source: Linux export of the product (not committed)
 #                - ./jre.tar.gz: Linux JRE of the same architecture, with
 #                  everything under a top folder jre/ (not committed)
-#                - The app listening for HTTP on 0.0.0.0:8080
-# Variables:     TZ and JAVA_SERVICE_EXAMPLE_LANG from .env.
+#                - The app listening for HTTP on 0.0.0.0, on
+#                  JAVA_SERVICE_EXAMPLE_PORT
+# Variables:     TZ, JAVA_SERVICE_EXAMPLE_PORT and JAVA_SERVICE_EXAMPLE_LANG
+#                from .env.
 # ============================================================================
 
 services:
@@ -37,11 +40,12 @@ services:
     # --------------------------------------------------------------------------
     # HTTP port
     # --------------------------------------------------------------------------
-    # Port the app's HTTP server listens on (must match the port set in the
-    # app). Exposed to the internal network only, not published on the host:
-    # the HTTP gateway reaches it at http://java-service-example:8080.
+    # Port the app's HTTP server listens on, from .env (must match the port
+    # set in the app). Exposed to the internal network only, not published on
+    # the host: the HTTP gateway reaches it at
+    # http://java-service-example:<port>.
     expose:
-      - "8080"
+      - "${JAVA_SERVICE_EXAMPLE_PORT}"
 
     # --------------------------------------------------------------------------
     # Environment
@@ -63,11 +67,11 @@ services:
     # --------------------------------------------------------------------------
     # Health check
     # --------------------------------------------------------------------------
-    # Healthy once the app accepts connections on its HTTP port (8080). Uses
+    # Healthy once the app accepts connections on its HTTP port. Uses
     # bash's /dev/tcp, so no HTTP client is needed in the image. The start
     # period gives the application time to start the HTTP server.
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${JAVA_SERVICE_EXAMPLE_PORT}"]
       interval: 30s
       timeout: 5s
       retries: 3

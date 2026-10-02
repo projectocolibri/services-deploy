@@ -7,7 +7,7 @@
 #                (npm ci, without devDependencies) in a build stage, copies
 #                the app (./source) to /app and runs it with `node .`, which
 #                starts the file named in "main" of package.json, on port
-#                3000 (exposed in compose.yaml). To deploy a new version,
+#                8080 (exposed in compose.yaml). To deploy a new version,
 #                replace the files and rebuild:
 #                  docker compose up -d --build nodejs-app-example
 # Prerequisites: - Build context: this directory (compose.yaml sets it)
