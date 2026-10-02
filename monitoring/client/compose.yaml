@@ -89,6 +89,9 @@ services:
       - ./pmm-client-entrypoint.sh:/usr/local/bin/pmm-client-entrypoint.sh:ro
       # Service registration script.
       - ./pmm-client-register.sh:/usr/local/bin/pmm-client-register.sh:ro
+      # PostgreSQL replica lag query (pg_replica_lag_seconds). Mounted as a
+      # single file to keep the image's bundled queries.
+      - ./custom-queries/postgresql/replica-lag.yml:/usr/local/percona/pmm/collectors/custom-queries/postgresql/medium-resolution/replica-lag.yml:ro
 
   cadvisor:
     # --------------------------------------------------------------------------

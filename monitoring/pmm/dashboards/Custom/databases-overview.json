@@ -244,7 +244,7 @@
             "uid": "${ds}"
           },
           "editorMode": "code",
-          "expr": "max(pg_custom_stat_wal_receiver_lag_time_seconds)",
+          "expr": "max(pg_replica_lag_seconds)",
           "legendFormat": "wal receiver lag",
           "range": true,
           "instant": false,
@@ -441,7 +441,7 @@
             "uid": "${ds}"
           },
           "editorMode": "code",
-          "expr": "max(pg_custom_stat_wal_receiver_lag_time_seconds)",
+          "expr": "max(pg_replica_lag_seconds)",
           "legendFormat": "postgres-replica",
           "range": true,
           "instant": false,

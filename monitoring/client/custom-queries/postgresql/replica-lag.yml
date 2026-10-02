@@ -1,0 +1,28 @@
+# ============================================================================
+# PostgreSQL replica lag (PMM custom query)
+#
+# Purpose:       Exports pg_replica_lag_seconds: how far postgres-replica is
+#                behind the primary.
+# Role:          Mounted into pmm-client's medium-resolution custom queries;
+#                runs against every registered PostgreSQL service.
+#                  - replica, streaming, everything received is replayed: 0
+#                  - replica, streaming, replay behind: seconds since the last
+#                    replayed transaction
+#                  - primary, or a replica that is not streaming: no value
+#                Unlike now() - pg_last_xact_replay_timestamp() alone, it does
+#                not grow while the primary has no writes.
+# Prerequisites: - Monitoring role with pg_monitor (pg_stat_wal_receiver
+#                  details need pg_read_all_stats)
+# ============================================================================
+
+pg_replica_lag:
+  query: |
+    SELECT CASE WHEN pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn() THEN 0
+                ELSE EXTRACT(EPOCH FROM now() - pg_last_xact_replay_timestamp())
+           END AS seconds
+    FROM pg_stat_wal_receiver
+    WHERE status = 'streaming'
+  metrics:
+    - seconds:
+        usage: "GAUGE"
+        description: "Replica lag in seconds; 0 when all received WAL is replayed"

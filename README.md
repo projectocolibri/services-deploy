@@ -521,6 +521,12 @@ which starts the file in `"main"` of `package.json`.
 `monitoring/pmm/dashboards/Custom/`. PMM re-reads that folder every 60 seconds,
 so edit the JSON files rather than the UI.
 
+PostgreSQL replica lag comes from a custom query
+(`monitoring/client/custom-queries/postgresql/replica-lag.yml`, metric
+`pg_replica_lag_seconds`): 0 when the replica has replayed everything it
+received, so it stays at 0 while the primary has no writes. Restart
+`pmm-client` after changing it.
+
 ### Alerts
 
 Configured in the PMM UI (**Alerting**): contact points, alert rules and
