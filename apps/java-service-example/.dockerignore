@@ -2,11 +2,10 @@
 # Docker build context exclusions (java-service-example)
 #
 # Purpose:       Keeps repository placeholders out of the image.
-# Role:          source/ and jre/ are copied into the image; their .gitkeep
-#                files only keep the empty folders in Git.
+# Role:          source/ is copied into the image; its .gitkeep file only
+#                keeps the empty folder in Git.
 # Prerequisites: None.
 # Variables:     None.
 # ============================================================================
 
 source/.gitkeep
-jre/.gitkeep

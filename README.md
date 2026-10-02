@@ -79,7 +79,7 @@ databases/
     admin/                   pgAdmin
     backup/                  pg_basebackup, WAL stream, restore script
 apps/
-  java-service-example/      Java app export + Linux JRE (source/, jre/)
+  java-service-example/      Java app export + Linux JRE (source/, jre.tar.gz)
   angular-app-example/       Angular SSR build run by Node.js (source/)
   nodejs-app-example/        Node.js app, dependencies installed in the image (source/)
 ```
@@ -405,7 +405,7 @@ docker compose --profile java-service-example up -d --build   # or add it to COM
 docker compose logs -f java-service-example
 ```
 
-- **Deploy a new version**: replace the files in `source/` (and `jre/`) and
+- **Deploy a new version**: replace the files in `source/` (and `jre.tar.gz`) and
   rebuild: `docker compose up -d --build <app>`.
 - **Add an app**: copy the example of the same type to `apps/<app>`, rename
   the service in its `compose.yaml` (and the launcher in the Java
@@ -417,11 +417,12 @@ docker compose logs -f java-service-example
 1. Export the app for Linux (e.g. x86_64) into
    `apps/java-service-example/source/`: the launcher `java-service-example`,
    `java-service-example.ini`, `plugins/`, `configuration/`, ...
-2. Put a Linux JRE of the same architecture in `apps/java-service-example/jre/`
-   (`jre/bin/java`), e.g. Java 8 for older apps.
+2. Put a Linux JRE of the same architecture, e.g. Java 8 for older apps, as
+   `apps/java-service-example/jre.tar.gz`, with everything under a top
+   folder `jre/` (`jre/bin/java`). The build extracts it to `/app/jre`.
 3. `docker compose up -d --build java-service-example`.
 
-The Dockerfile copies `source/` to `/app` and `jre/` to `/app/jre`, with
+The Dockerfile copies `source/` to `/app` and the JRE to `/app/jre`, with
 executable permissions (they are lost when the export passes through Windows),
 and runs:
 
@@ -579,5 +580,5 @@ Same for `postgres-replica-db` / `<PROJECT_NAME>_postgres-replica-data`.
 - [ ] `MYSQL_BACKUP_DIR` / `POSTGRES_BACKUP_DIR` on a separate disk, backup
       services healthy, and a test restore done
 - [ ] Off-site copy of the backup directories
-- [ ] Apps: exports in `source/` (and JREs in `jre/`), app variables
+- [ ] Apps: exports in `source/` (and JREs in `jre.tar.gz`), app variables
       in `.env`, apps running
