@@ -32,7 +32,6 @@ databases/*/backup/backups/
 # .gitkeep placeholders keep the empty folders.
 apps/*/source/*
 !apps/*/source/.gitkeep
-apps/*/jre.tar.gz
 
 # ----------------------------------------------------------------------------
 # VPN gateway state (WireGuard)

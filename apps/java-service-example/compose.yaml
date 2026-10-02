@@ -3,16 +3,18 @@
 #
 # Purpose:       Runs a Java application exported for Linux, with its
 #                own JRE, as an internal HTTP service on port 8080.
-# Role:          The image contains the export (./source -> /app) and the JRE
-#                (./jre -> /app/jre) and runs the launcher (see ./Dockerfile).
-#                To deploy a new version, replace the files and run
+# Role:          The image contains the export (./source -> /app) and the
+#                extracted JRE (./jre.tar.gz -> /app/jre), and runs the
+#                launcher (see ./Dockerfile). To deploy a new version, replace
+#                the files and run
 #                `docker compose up -d --build java-service-example`.
 #                Not published on the host: reached through the HTTP gateway
 #                (gateway/http/conf.d/<app>.conf with
 #                proxy_pass http://java-service-example:8080), or through the
 #                VPN at http://java-service-example:8080.
 # Prerequisites: - ./source: Linux export of the product (not committed)
-#                - ./jre: Linux JRE of the same architecture (not committed)
+#                - ./jre.tar.gz: Linux JRE of the same architecture, with
+#                  everything under a top folder jre/ (not committed)
 #                - The app listening for HTTP on 0.0.0.0:8080
 # Variables:     TZ and JAVA_SERVICE_EXAMPLE_LANG from .env.
 # ============================================================================
