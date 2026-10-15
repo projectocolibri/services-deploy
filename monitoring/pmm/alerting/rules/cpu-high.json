@@ -1,0 +1,50 @@
+{
+  "uid": "custom-cpu-high",
+  "title": "High CPU",
+  "ruleGroup": "Servers",
+  "condition": "B",
+  "data": [
+    {
+      "refId": "A",
+      "relativeTimeRange": {
+        "from": 900,
+        "to": 0
+      },
+      "datasourceUid": "PA58DA793C7250F1B",
+      "model": {
+        "refId": "A",
+        "expr": "100 * (1 - avg by (node_name) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))",
+        "instant": true
+      }
+    },
+    {
+      "refId": "B",
+      "datasourceUid": "__expr__",
+      "model": {
+        "refId": "B",
+        "type": "threshold",
+        "expression": "A",
+        "conditions": [
+          {
+            "evaluator": {
+              "type": "gt",
+              "params": [
+                90
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "noDataState": "OK",
+  "execErrState": "Error",
+  "for": "15m",
+  "labels": {
+    "severity": "warning"
+  },
+  "annotations": {
+    "summary": "CPU of {{ $labels.node_name }} is at {{ printf \"%.0f\" $values.A.Value }}%",
+    "description": "More than 90% of the CPU has been busy for 15 minutes. Check which containers use it (Containers overview dashboard) and the slowest queries (Query Analytics)."
+  }
+}

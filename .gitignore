@@ -19,10 +19,25 @@
 .env
 
 # ----------------------------------------------------------------------------
-# Database backup output
+# Database backups and their secrets
 # ----------------------------------------------------------------------------
-# Dump files written by a backup job under each database stack.
+# Backups are kept in Docker volumes. This folder only holds output of the
+# earlier backup system, if any.
 databases/*/backup/backups/
+# pgBackRest TLS certificates and keys, created by postgres-backup-server
+# and copied to the replica's server.
+databases/postgres/backup/certs/*
+!databases/postgres/backup/certs/.gitkeep
+
+# ----------------------------------------------------------------------------
+# Off-site sync
+# ----------------------------------------------------------------------------
+# rclone remotes and their access tokens (`docker compose run --rm sync
+# config`).
+sync/rclone/*
+!sync/rclone/.gitkeep
+# Empty folder mounted as SYNC_DATA_DIR when it is not set.
+sync/data/
 
 # ----------------------------------------------------------------------------
 # App binaries and build output

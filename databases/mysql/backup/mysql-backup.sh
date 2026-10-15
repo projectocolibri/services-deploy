@@ -1,88 +1,70 @@
 #!/bin/bash
 # ============================================================================
-# MySQL backups: daily full backup + continuous binary log stream
+# MySQL backups: full + incremental XtraBackup, binary log stream
 #
 # Purpose:       Keeps everything needed for full and point-in-time recovery
-#                of MySQL in the backup directory, from one container.
-# Role:          Runs on the server with the replica.
-#                Binary log stream (background, pulls from the primary, so it
-#                works from another server through the VPN client):
-#                  1. checks the primary's server_uuid against the one recorded
-#                     in binlog/: a different primary (recreated data volume)
-#                     moves the old binary logs aside and asks for a full
-#                     backup at once, so the two are never mixed
-#                  2. resumes from the newest local binary log, or starts at
-#                     the file the replica is currently reading
-#                  3. runs mysqlbinlog --stop-never, which writes every new
-#                     event into files identical to the primary's
-#                  4. watchdog: restarts the stream when it falls behind the
-#                     replica for WATCHDOG_STRIKES minutes (a silently dropped
-#                     connection is otherwise never noticed)
-#                  5. if the primary already purged the file to resume from,
-#                     logs a gap warning and restarts at the current file
-#                Full backup (foreground, Percona XtraBackup of the replica,
-#                which keeps the load off the primary):
-#                  1. waits for the replica to be up and replicating
-#                  2. runs a backup at once if none exists, then on
-#                     BACKUP_SCHEDULE (cron); a failed backup is retried
-#                     within the hour
-#                  3. writes into <timestamp>.partial and renames it only on
-#                     success, so an incomplete backup is never mistaken for a
-#                     good one
-#                  4. optionally verifies it (decompress + prepare on a copy)
-#                  5. prunes backups older than BACKUP_RETENTION (always
-#                     keeping the newest), binary logs older than the oldest
-#                     kept backup, and moved-aside logs past the retention
-#                Called with "health", runs the health check instead.
+#                of the local MySQL server (primary or replica) in /backups.
+# Role:          Entrypoint of mysql-backup-primary and mysql-backup-replica
+#                (compose.yaml). Layout of /backups:
+#                  chains/<ts>/              one full backup and the
+#                                            incrementals taken after it
+#                    <ts>-full/              full backup (zstd)
+#                    <ts2>-incr/             incremental: pages changed since
+#                                            the previous backup of the chain
+#                    server_uuid, started    server and start of the chain
+#                  binlog/<server_uuid>/     binary logs of that server,
+#                                            identical to its own files
+#                Each server's files are kept apart by server_uuid: a
+#                recreated server (new data volume) starts a new full chain
+#                and a new binary log directory, never mixed with the old.
+#                Startup:
+#                  1. waits for the server (a replica: until it replicates)
+#                  2. streams its binary logs in the background
+#                     (mysqlbinlog --stop-never, restarted when it stops or
+#                     falls behind for WATCHDOG_STRIKES minutes)
+#                  3. takes a full backup at once if this server has none
+#                  4. runs supercronic: "full" on FULL_SCHEDULE, "incr" on
+#                     INCREMENTAL_SCHEDULE
+#                "full" or "incr": one backup into <name>.partial, renamed
+#                only when complete (and verified: decompress and prepare a
+#                copy of the chain up to it), then retention. An incremental
+#                without a full backup of this server is taken as full.
+#                "prepare TARGET_TIME": used by mysql-restore.sh: prepares
+#                the newest backups finished before TARGET_TIME into /restore.
+#                "health": the health check.
 # Prerequisites: - percona/percona-xtrabackup image matching the server's major
-#                  version (8.4); it also provides mysql, mysqladmin and
-#                  mysqlbinlog
-#                - The replica's data volume mounted read-only at /var/lib/mysql
-#                - Replication account on the primary (REPLICATION SLAVE)
-#                - Backup directory mounted at /backups
-#                - Runs as root (reads the data files, writes backups)
+#                  version (8.4), plus supercronic (./Dockerfile)
+#                - The server's data volume mounted read-only at /var/lib/mysql
+#                - Backup volume mounted at /backups; runs as root
+#                - Page tracking (component_mysqlbackup, installed by the
+#                  server entrypoints) makes incrementals read only the
+#                  changed pages; without it they read every page
 #
 # Variables:
-#   BACKUP_SOURCE_HOST     (env) replica to back up. Default: mysql-replica
-#   MYSQL_ROOT_PASSWORD    (env) root password of the replica
-#   PRIMARY_HOST           (env) primary to stream from. Default: mysql-primary
-#   REPLICATION_USER       (env) replication account on the primary
-#   REPLICATION_PASSWORD   (env) password of REPLICATION_USER
-#   BINLOG_SERVER_ID       (env) server ID the stream uses on the primary; must
-#                          differ from every server and replica. Default: 101
-#   BACKUP_SCHEDULE        (env) cron expression of the full backups
-#                          (minute hour day month weekday). Default: 0 2 * * *.
-#                          The XtraBackup image has no time zone data: UTC
-#   BACKUP_RETENTION       (env) how long backups are kept: number + h, d, w,
-#                          M (months) or y. Default: 7d
+#   BACKUP_SOURCE_HOST     (env) server backed up. Default: mysql-replica
+#   BACKUP_SOURCE_ROLE     (env) primary or replica. Default: replica
+#   MYSQL_ROOT_PASSWORD    (env) root password of the server
+#   BINLOG_SERVER_ID       (env) server ID of the stream; unique among the
+#                          server's replicas and streams. Default: 101
+#   FULL_SCHEDULE          (env) cron expression of the full backups.
+#                          Default: 0 2 * * 0
+#   INCREMENTAL_SCHEDULE   (env) cron expression of the incrementals.
+#                          Default: 0 2 * * 1-6
+#   RETENTION_DAYS         (env) days of point-in-time recovery kept.
+#                          Default: 14
 #   BACKUP_VERIFY          (env) "true" verifies each backup. Default: true
 #   BACKUP_THREADS         (env) parallel copy/compression threads. Default: 2
 #   component              (local) log prefix: backup, or binlog in the stream
-#   backup_root            (local) directory holding one folder per backup
-#   binlog_dir             (local) binary logs copied from the primary
-#   run_dir                (local) container-only state (credentials, lock)
-#   root_cnf, repl_cnf     (local) option files with the credentials
-#   running                (local) lock file present while a backup runs
-#   failed                 (local) marker left by a failed backup
-#   next_file              (local) epoch of the next scheduled backup (health)
-#   cron_minutes, cron_hours, cron_days, cron_months, cron_weekdays,
-#   cron_any_day           (local) BACKUP_SCHEDULE expanded by parse_settings
-#   pid_file, err_file     (local) PID and stderr of the running mysqlbinlog
-#   uuid_file              (local) server_uuid of the primary the local binary
-#                          logs came from
-#   backup_now             (local) flag file: the stream asks for a full backup
-#                          at once (after a primary change)
-#   reset                  (local) "1" ignores local files and restarts at the
-#                          replica's current file (after a gap)
-#   start, ts              (local) backup start time (epoch, and timestamp name)
-#   target, partial        (local) final and in-progress backup directories
-#   cutoff                 (local) epoch before which backups are pruned
-#   backups, oldest        (local) complete backups (sorted), oldest kept one
-#   newest_binlog          (local) binary log being written, never pruned
-#   file, pos, local_size  (local) replica's read position, local copy's size
-#   strikes, pid           (local) watchdog counter, PID of mysqlbinlog
-#   latest, age            (local, health) newest backup and its age in seconds
-#   "$1"                   (args) "health" runs the health check
+#   chains_dir, binlog_root (local) backup chains and binary log directories
+#   run_dir                (local) container-only state: credentials, lock,
+#                          stream PID, status of the last backup (ok, failed)
+#   root_cnf               (local) option file with the root credentials
+#   chain, base, target, partial
+#                          (local) chain directory, backup the incremental
+#                          builds on, final and in-progress backup directories
+#   uuid                   (local) server_uuid of the server
+#   cutoff                 (local) epoch before which backups may be removed
+#   "$1"                   (args) full, incr, prepare, health; empty at startup
 # ============================================================================
 
 set -uo pipefail
@@ -91,26 +73,19 @@ set -uo pipefail
 # Settings
 # ----------------------------------------------------------------------------
 source_host="${BACKUP_SOURCE_HOST:-mysql-replica}"
-primary="${PRIMARY_HOST:-mysql-primary}"
+source_role="${BACKUP_SOURCE_ROLE:-replica}"
 server_id="${BINLOG_SERVER_ID:-101}"
-schedule="${BACKUP_SCHEDULE:-0 2 * * *}"
-retention="${BACKUP_RETENTION:-7d}"
+full_schedule="${FULL_SCHEDULE:-0 2 * * 0}"
+incr_schedule="${INCREMENTAL_SCHEDULE:-0 2 * * 1-6}"
+retention_days="${RETENTION_DAYS:-14}"
 verify="${BACKUP_VERIFY:-true}"
 threads="${BACKUP_THREADS:-2}"
 watchdog_strikes=5
 
-backup_root=/backups/full
-binlog_dir=/backups/binlog
+chains_dir=/backups/chains
+binlog_root=/backups/binlog
 run_dir=/run/mysql-backup
 root_cnf="${run_dir}/root.cnf"
-repl_cnf="${run_dir}/replication.cnf"
-running="${run_dir}/running"
-failed="${run_dir}/failed"
-next_file="${run_dir}/next-run"
-pid_file="${run_dir}/mysqlbinlog.pid"
-err_file="${run_dir}/mysqlbinlog.err"
-uuid_file="${binlog_dir}/.server_uuid"
-backup_now="${run_dir}/backup-now"
 
 component=backup
 
@@ -118,152 +93,287 @@ log() {
     echo "[mysql-${component}] $(date '+%F %T') $*"
 }
 
-# latest_backup: prints the newest complete backup directory (empty if none).
-latest_backup() {
-    find "${backup_root}" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
-        -regex '.*/[0-9]{8}-[0-9]{6}' 2>/dev/null | sort | tail -1
+# query SQL: runs SQL on the server and prints the result without headers.
+query() {
+    mysql --defaults-extra-file="${root_cnf}" --host="${source_host}" -N -B -e "$1" 2>/dev/null
+}
+
+# list_chains: chain directories with a complete full backup, oldest first.
+list_chains() {
+    local c
+    find "${chains_dir}" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
+        -regex '.*/[0-9]{8}-[0-9]{6}' 2>/dev/null | sort | while read -r c; do
+        [ -d "${c}/$(basename "${c}")-full" ] && echo "${c}"
+    done
+}
+
+# list_backups CHAIN: complete backups of a chain, in order.
+list_backups() {
+    find "$1" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
+        -regex '.*/[0-9]{8}-[0-9]{6}-(full|incr)' | sort
+}
+
+# finished DIR: epoch at which a backup finished.
+finished() {
+    cat "$1/finished" 2>/dev/null || echo 0
+}
+
+# newest_binlog DIR: newest binary log file in DIR (empty if none).
+newest_binlog() {
+    find "$1" -maxdepth 1 -type f -regex '.*\.[0-9]+' -printf '%f\n' 2>/dev/null | sort | tail -1
 }
 
 # ----------------------------------------------------------------------------
-# Health check mode
+# Health check
 # ----------------------------------------------------------------------------
-# Healthy while the binary log stream runs, a backup exists, the last attempt
-# did not fail and the next scheduled backup is not over an hour overdue.
 if [ "${1:-}" = "health" ]; then
-    [ -f "${pid_file}" ] && kill -0 "$(cat "${pid_file}")" 2>/dev/null || exit 1
-    [ -f "${running}" ] && exit 0
-    [ ! -f "${failed}" ] && [ -n "$(latest_backup)" ] || exit 1
-    [ -f "${next_file}" ] && [ "$(date +%s)" -lt $(( $(cat "${next_file}") + 3600 )) ]
+    [ -f "${run_dir}/stream.pid" ] && kill -0 "$(cat "${run_dir}/stream.pid")" 2>/dev/null || exit 1
+    [ -f "${run_dir}/ok" ] && [ ! -f "${run_dir}/failed" ]
     exit $?
 fi
 
-# ----------------------------------------------------------------------------
-# Credentials
-# ----------------------------------------------------------------------------
-# Option files readable only inside this container, so the passwords are not
-# passed on the command line.
-mkdir -p "${run_dir}" "${backup_root}" "${binlog_dir}"
-rm -f "${running}" "${pid_file}" "${backup_now}"
-(
-    umask 077
-    printf '[client]\nuser=root\npassword="%s"\n' "${MYSQL_ROOT_PASSWORD}" > "${root_cnf}"
-    printf '[client]\nuser=%s\npassword="%s"\n' "${REPLICATION_USER}" "${REPLICATION_PASSWORD}" > "${repl_cnf}"
-)
+# ============================================================================
+# Prepare (verification and restore)
+# ============================================================================
+
+# prepare_backups WORK DIR...: copies the full backup DIR (first) and the
+# incrementals after it to WORK, decompresses them and prepares WORK/1,
+# applying each incremental in order; only the last step rolls back
+# uncommitted transactions. The .zst files are deleted separately:
+# --remove-original with parallel threads can process a file twice and fail.
+# --defaults-file limits prepare to the backup's own settings, so it never
+# looks at the server's data directory mounted at /var/lib/mysql. WORK must
+# not be a hidden directory: InnoDB skips them.
+prepare_backups() {
+    local work="$1" n=$(( $# - 1 )) i=0 d dest args
+    shift
+    rm -rf "${work}"
+    mkdir -p "${work}"
+    for d in "$@"; do
+        i=$(( i + 1 ))
+        dest="${work}/${i}"
+        cp -a "${d}" "${dest}" \
+            && xtrabackup --decompress --parallel="${threads}" --target-dir="${dest}" \
+            && find "${dest}" -name '*.zst' -delete || return 1
+        args=(--prepare --target-dir="${work}/1")
+        [ "${i}" -gt 1 ] && args+=(--incremental-dir="${dest}")
+        [ "${i}" -lt "${n}" ] && args+=(--apply-log-only)
+        xtrabackup --defaults-file="${work}/1/backup-my.cnf" "${args[@]}" || return 1
+        [ "${i}" -gt 1 ] && rm -rf "${dest}"
+    done
+    return 0
+}
+
+# Restore: prepares into /restore the newest chain whose full backup
+# finished before TARGET_TIME (UTC; empty: now), with its incrementals
+# finished before it, and prints "RESTORE <server_uuid> <binlog file>": the
+# binary logs to replay from.
+if [ "${1:-}" = "prepare" ]; then
+    target_epoch="$(date -u -d "${2:-now}" +%s)" || { echo "invalid time '${2:-}'"; exit 1; }
+    chain=""
+    for c in $(list_chains); do
+        [ "$(finished "${c}/$(basename "${c}")-full")" -le "${target_epoch}" ] && chain="${c}"
+    done
+    [ -n "${chain}" ] || { echo "[mysql-restore] no backup finished before ${2:-now}"; exit 1; }
+    backups=()
+    for b in $(list_backups "${chain}"); do
+        [ "$(finished "${b}")" -le "${target_epoch}" ] && backups+=("${b}")
+    done
+    echo "[mysql-restore] backups: ${backups[*]#"${chains_dir}/"}"
+    prepare_backups /restore/work "${backups[@]}" > /tmp/prepare.log 2>&1 \
+        || { tail -20 /tmp/prepare.log; exit 1; }
+    find /restore/work/1 -mindepth 1 -maxdepth 1 -exec mv -t /restore {} +
+    rm -rf /restore/work /restore/backup.log /restore/finished
+    chown -R 1001:1001 /restore
+    echo "RESTORE $(cat "${chain}/server_uuid") $(cut -f1 /restore/xtrabackup_binlog_info)"
+    exit 0
+fi
+
+# ============================================================================
+# Backups
+# ============================================================================
+
+# prune: removes a chain once the next chain's full backup finished before
+# the retention cutoff (the next chain then covers the whole retention), and
+# failed logs past it. Binary logs: per server, the files last written before
+# its oldest remaining chain started (never the newest file); a server
+# without chains, once all its files are past the cutoff.
+prune() {
+    local cutoff chains i next dir uuid oldest c
+    cutoff=$(( $(date +%s) - retention_days * 86400 ))
+    mapfile -t chains < <(list_chains)
+    for (( i = 0; i < ${#chains[@]} - 1; i++ )); do
+        next="${chains[i+1]}/$(basename "${chains[i+1]}")-full"
+        if [ "$(finished "${next}")" -lt "${cutoff}" ]; then
+            log "removing expired chain ${chains[i]}"
+            rm -rf "${chains[i]}"
+        fi
+    done
+    find "${chains_dir}" -maxdepth 1 -name '*.failed.log' ! -newermt "@${cutoff}" -delete
+
+    for dir in "${binlog_root}"/*/; do
+        [ -d "${dir}" ] || continue
+        uuid="$(basename "${dir}")"
+        oldest=""
+        for c in $(list_chains); do
+            [ "$(cat "${c}/server_uuid")" = "${uuid}" ] && { oldest="${c}"; break; }
+        done
+        if [ -n "${oldest}" ]; then
+            find "${dir}" -maxdepth 1 -type f -regex '.*\.[0-9]+' ! -name "$(newest_binlog "${dir}")" \
+                ! -newer "${oldest}/started" -printf '[mysql-backup] removing binary log %f\n' -delete
+        elif [ -z "$(find "${dir}" -type f -newermt "@${cutoff}" | head -1)" ]; then
+            log "removing binary logs of server ${uuid} (no backups left)"
+            rm -rf "${dir}"
+        fi
+    done
+}
+
+# backup TYPE: full or incr.
+backup() {
+    local type="$1" uuid chain base start ts target partial tracking=()
+    # One backup at a time (the stream may ask for a full backup too).
+    exec 9> "${run_dir}/backup.lock"
+    flock -n 9 || { log "another backup is running, ${type} skipped"; return 0; }
+
+    uuid="$(query 'SELECT @@server_uuid')"
+    [ -n "${uuid}" ] || { log "${source_host} not reachable, ${type} backup FAILED"; touch "${run_dir}/failed"; return 1; }
+    chain="$(list_chains | tail -1)"
+    if [ "${type}" = "incr" ] && { [ -z "${chain}" ] || [ "$(cat "${chain}/server_uuid")" != "${uuid}" ]; }; then
+        log "no full backup of this server (${uuid}) yet: taking a full backup"
+        type=full
+    fi
+
+    start=$(date +%s)
+    ts="$(date -d "@${start}" +%Y%m%d-%H%M%S)"
+    if [ "${type}" = "full" ]; then
+        chain="${chains_dir}/${ts}"
+        mkdir -p "${chain}"
+        echo "${uuid}" > "${chain}/server_uuid"
+        touch -d "@${start}" "${chain}/started"
+    else
+        base="$(list_backups "${chain}" | tail -1)"
+    fi
+    target="${chain}/${ts}-${type}"
+    partial="${target}.partial"
+    [ "$(query "SELECT COUNT(*) FROM mysql.component WHERE component_urn = 'file://component_mysqlbackup'")" = "1" ] \
+        && tracking=(--page-tracking)
+
+    log "starting ${type} backup of ${source_host} into ${target}${base:+ (since $(basename "${base}"))}"
+    xtrabackup --defaults-extra-file="${root_cnf}" --backup --host="${source_host}" \
+        --target-dir="${partial}" --parallel="${threads}" \
+        --compress=zstd --compress-threads="${threads}" \
+        "${tracking[@]}" ${base:+--incremental-basedir="${base}"} > "${partial}.log" 2>&1
+    local status=$?
+
+    if [ "${status}" -eq 0 ] && [ "${verify}" = "true" ]; then
+        log "verifying (decompress and prepare a copy of the chain up to this backup)"
+        prepare_backups /backups/verify.tmp $(list_backups "${chain}") "${partial}" >> "${partial}.log" 2>&1
+        status=$?
+        rm -rf /backups/verify.tmp
+    fi
+
+    if [ "${status}" -ne 0 ]; then
+        log "${type} backup FAILED, last lines of the log:"
+        tail -20 "${partial}.log"
+        mv "${partial}.log" "${chains_dir}/${ts}-${type}.failed.log"
+        rm -rf "${partial}"
+        [ "${type}" = "full" ] && rm -rf "${chain}"
+        touch "${run_dir}/failed"
+        return 1
+    fi
+
+    mv "${partial}.log" "${partial}/backup.log"
+    date +%s > "${partial}/finished"
+    mv "${partial}" "${target}"
+    touch "${run_dir}/ok"
+    rm -f "${run_dir}/failed"
+    log "${type} backup complete: ${target} ($(du -sh "${target}" | cut -f1), $(( $(date +%s) - start ))s)"
+    prune
+}
+
+case "${1:-}" in
+    full | incr)
+        backup "$1"
+        exit $?
+        ;;
+esac
 
 # ============================================================================
 # Binary log stream
 # ============================================================================
 
-# replica_field NAME: prints a field of the local replica's SHOW REPLICA STATUS.
-replica_field() {
-    mysql --defaults-extra-file="${root_cnf}" --host="${source_host}" -e 'SHOW REPLICA STATUS\G' 2>/dev/null \
-        | awk -F': ' -v k="$1" '{ gsub(/^ +/, "", $1) } $1 == k { print $2 }'
-}
-
-# newest_local: prints the newest binary log already copied (empty if none).
-newest_local() {
-    find "${binlog_dir}" -maxdepth 1 -type f -regex '.*\.[0-9]+' -printf '%f\n' | sort | tail -1
-}
-
-# check_primary: records the primary's server_uuid. If the local binary logs
-# came from another primary (its data volume was recreated), moves them to
-# binlog.<old uuid>.<date> so the new primary's files never overwrite or mix
-# with them, and asks for a full backup at once. The local files are foreign
-# when the recorded uuid differs, or when the newest is ahead of the primary's
-# current file (read from the replica), which the same server can never be
-# (this also covers files from before the uuid was recorded).
-check_primary() {
-    local uuid old newest current foreign=0
-    uuid="$(mysql --defaults-extra-file="${repl_cnf}" --host="${primary}" -N -B -e 'SELECT @@server_uuid' 2>/dev/null)"
-    [ -n "${uuid}" ] || return 1
-    old="$(cat "${uuid_file}" 2>/dev/null)"
-    newest="$(newest_local)"
-    if [ -n "${newest}" ]; then
-        current="$(replica_field Source_Log_File)"
-        # Without a recorded uuid the replica must answer; with one, a replica
-        # still starting does not hold up the stream.
-        [ -n "${current}" ] || [ -n "${old}" ] || return 1
-        if { [ -n "${old}" ] && [ "${old}" != "${uuid}" ]; } \
-            || { [ -n "${current}" ] && [[ "${newest}" > "${current}" ]]; }; then
-            foreign=1
-        fi
-    fi
-    if [ "${foreign}" = "1" ]; then
-        local archive="${binlog_dir}.${old:-unknown}.$(date +%Y%m%d-%H%M%S)"
-        log "WARNING: ${primary} is a different server (server_uuid ${uuid}, local"
-        log "binary logs are from ${old:-an unrecorded server} or ahead of it). Moving them to"
-        log "${archive}; delete it once its backups are no longer needed."
-        mv "${binlog_dir}" "${archive}"
-        mkdir -p "${binlog_dir}"
-        # Existing backups belong to the old primary: take a new one now.
-        touch "${backup_now}"
-    fi
-    echo "${uuid}" > "${uuid_file}"
-}
-
-# start_file: file to start streaming from: the newest local copy (downloaded
-# again from its beginning), or the file the replica is reading.
+# start_file DIR: file to stream from: the newest local copy (downloaded
+# again from its beginning); if the server no longer has it, the next one it
+# has (a gap: logged); with no local copy, the server's current file.
 start_file() {
-    local file
-    file="$(newest_local)"
-    if [ "${reset}" = "1" ] || [ -z "${file}" ]; then
-        until file="$(replica_field Source_Log_File)" && [ -n "${file}" ]; do
-            log "waiting for replica ${source_host} to report its source binary log..."
-            sleep 10 & wait $!
-        done
+    local dir="$1" newest files f
+    mapfile -t files < <(query 'SHOW BINARY LOGS' | cut -f1)
+    [ "${#files[@]}" -gt 0 ] || return 1
+    newest="$(newest_binlog "${dir}")"
+    if [ -z "${newest}" ]; then
+        echo "${files[-1]}"
+        return 0
     fi
-    echo "${file}"
+    for f in "${files[@]}"; do
+        if [[ ! "${f}" < "${newest}" ]]; then
+            [ "${f}" != "${newest}" ] && log "WARNING: ${newest} is gone from the server: point-in-time recovery has a GAP until the next full backup" >&2
+            echo "${f}"
+            return 0
+        fi
+    done
+    log "WARNING: local binary logs are ahead of the server, restarting at its current file" >&2
+    echo "${files[-1]}"
 }
 
-# behind: succeeds when the local copy is behind what the replica has read.
+# behind DIR: succeeds when the local copy is behind the server's current
+# binary log position.
 behind() {
-    local file pos newest local_size
-    file="$(replica_field Source_Log_File)"
-    pos="$(replica_field Read_Source_Log_Pos)"
-    [ -n "${file}" ] && [ -n "${pos}" ] || return 1
-    newest="$(newest_local)"
-    [[ "${newest}" > "${file}" ]] && return 1
-    [ -f "${binlog_dir}/${file}" ] || return 0
-    local_size=$(stat -c %s "${binlog_dir}/${file}")
-    [ "${local_size}" -lt "${pos}" ]
+    local file pos
+    read -r file pos _ < <(query 'SHOW BINARY LOG STATUS')
+    [ -n "${file}" ] || return 1
+    [ -f "$1/${file}" ] || return 0
+    [ "$(stat -c %s "$1/${file}")" -lt "${pos}" ]
 }
 
 # stream_binlogs: streams forever; run in the background.
 stream_binlogs() {
-    local reset=0 file pid strikes
+    local uuid dir file pid strikes
     component=binlog
     trap 'kill $(jobs -p) 2>/dev/null; exit 0' TERM INT
 
     while true; do
-        until mysqladmin --defaults-extra-file="${repl_cnf}" --host="${primary}" --connect-timeout=5 ping --silent >/dev/null 2>&1 \
-            && check_primary; do
-            log "waiting for primary ${primary}..."
+        until uuid="$(query 'SELECT @@server_uuid')" && [ -n "${uuid}" ]; do
+            log "waiting for ${source_host}..."
             sleep 10 & wait $!
         done
+        dir="${binlog_root}/${uuid}"
+        mkdir -p "${dir}"
+        # A different server (recreated data volume) gets a full backup now.
+        chain="$(list_chains | tail -1)"
+        if [ -n "${chain}" ] && [ "$(cat "${chain}/server_uuid")" != "${uuid}" ]; then
+            log "new server ${uuid}: taking a full backup now"
+            /bin/bash "$0" full &
+        fi
 
-        file="$(start_file)"
-        reset=0
-        log "streaming binary logs from ${primary}, starting at ${file}"
-
-        # --raw writes files identical to the primary's; --result-file is the
+        file="$(start_file "${dir}")" || { sleep 10 & wait $!; continue; }
+        log "streaming binary logs of ${source_host} from ${file} into ${dir}"
+        # --raw writes files identical to the server's; --result-file is the
         # destination prefix (a directory, with trailing slash).
-        mysqlbinlog --defaults-extra-file="${repl_cnf}" \
-            --read-from-remote-server --host="${primary}" \
-            --raw --stop-never \
-            --connection-server-id="${server_id}" \
-            --result-file="${binlog_dir}/" \
-            "${file}" 2> "${err_file}" &
+        mysqlbinlog --defaults-extra-file="${root_cnf}" \
+            --read-from-remote-server --host="${source_host}" \
+            --raw --stop-never --connection-server-id="${server_id}" \
+            --result-file="${dir}/" "${file}" 2> "${run_dir}/mysqlbinlog.err" &
         pid=$!
-        echo "${pid}" > "${pid_file}"
+        echo "${pid}" > "${run_dir}/stream.pid"
 
         # --- Watchdog -------------------------------------------------------
         strikes=0
         while kill -0 "${pid}" 2>/dev/null; do
             sleep 60 & wait $!
-            if behind; then
+            if behind "${dir}"; then
                 strikes=$(( strikes + 1 ))
                 if [ "${strikes}" -ge "${watchdog_strikes}" ]; then
-                    log "stream behind the replica for ${strikes} minutes, restarting it"
+                    log "stream behind the server for ${strikes} minutes, restarting it"
                     kill "${pid}" 2>/dev/null
                 fi
             else
@@ -272,273 +382,56 @@ stream_binlogs() {
         done
 
         wait "${pid}" 2>/dev/null
-        rm -f "${pid_file}"
-        grep -v 'Using a password' "${err_file}" | sed 's/^/[mysql-binlog]   /'
-
-        # --- Gap handling ---------------------------------------------------
-        if grep -q 'Could not find first log file' "${err_file}"; then
-            log "WARNING: ${file} was already purged on the primary. Point-in-time"
-            log "recovery has a GAP until the next full backup. Restarting at the"
-            log "replica's current file."
-            reset=1
-        fi
-
+        rm -f "${run_dir}/stream.pid"
+        grep -v 'Using a password' "${run_dir}/mysqlbinlog.err" | sed 's/^/[mysql-binlog]   /'
         log "stream stopped, reconnecting in 10s"
         sleep 10 & wait $!
     done
 }
 
 # ============================================================================
-# Full backup
-# ============================================================================
-
-# wait_for_source: waits until the replica answers and replication is set up,
-# so a replica that is still cloning is never backed up.
-wait_for_source() {
-    until mysqladmin --defaults-extra-file="${root_cnf}" --host="${source_host}" ping --silent >/dev/null 2>&1 \
-        && [ -n "$(mysql --defaults-extra-file="${root_cnf}" --host="${source_host}" -N -B -e 'SHOW REPLICA STATUS' 2>/dev/null)" ]; do
-        log "waiting for replica ${source_host}..."
-        sleep 10 & wait $!
-    done
-}
-
-# verify_backup DIR: decompresses and prepares a copy of DIR, which replays the
-# redo log exactly as a restore would. The copy is removed afterwards. Its
-# directory must not be hidden: InnoDB skips hidden directories.
-# The .zst files are deleted separately: --remove-original with parallel
-# threads can process a file twice and fail. --defaults-file limits prepare to
-# the backup's own settings, so it never looks at the replica's data directory
-# mounted at /var/lib/mysql.
-verify_backup() {
-    local work="${backup_root}/verify.tmp"
-    rm -rf "${work}"
-    cp -a "$1" "${work}" \
-        && xtrabackup --decompress --parallel="${threads}" --target-dir="${work}" \
-        && find "${work}" -name '*.zst' -delete \
-        && xtrabackup --defaults-file="${work}/backup-my.cnf" --prepare --target-dir="${work}"
-    local status=$?
-    rm -rf "${work}"
-    return ${status}
-}
-
-# prune: removes backups older than the retention (never the newest), then
-# binary logs fully written before the oldest remaining backup started.
-prune() {
-    local cutoff backups oldest newest_binlog i
-    cutoff="$(retention_cutoff)"
-    mapfile -t backups < <(find "${backup_root}" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
-        -regex '.*/[0-9]{8}-[0-9]{6}' | sort)
-
-    for (( i = 0; i < ${#backups[@]} - 1; i++ )); do
-        if [ "$(stat -c %Y "${backups[i]}/.started" 2>/dev/null || echo 0)" -lt "${cutoff}" ]; then
-            log "removing expired backup ${backups[i]}"
-            rm -rf "${backups[i]}"
-        fi
-    done
-    find "${backup_root}" -maxdepth 1 -name '*.failed.log' ! -newermt "@${cutoff}" -delete
-    # Logs moved aside after a primary change: kept until their newest file
-    # is past the retention, like the backups they belong to.
-    find "$(dirname "${binlog_dir}")" -mindepth 1 -maxdepth 1 -type d -name "$(basename "${binlog_dir}").*" \
-        ! -newermt "@${cutoff}" -printf '[mysql-backup] removing old logs %f\n' -exec rm -rf {} +
-
-    oldest="$(find "${backup_root}" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
-        -regex '.*/[0-9]{8}-[0-9]{6}' | sort | head -1)"
-    if [ -n "${oldest}" ]; then
-        newest_binlog="$(newest_local)"
-        find "${binlog_dir}" -maxdepth 1 -type f -regex '.*\.[0-9]+' ! -name "${newest_binlog}" \
-            ! -newer "${oldest}/.started" -printf '[mysql-backup] removing binary log %f\n' -delete
-    fi
-}
-
-run_backup() {
-    local start ts target partial
-    start=$(date +%s)
-    ts="$(date -d "@${start}" +%Y%m%d-%H%M%S)"
-    target="${backup_root}/${ts}"
-    partial="${target}.partial"
-
-    touch "${running}"
-    log "starting full backup of ${source_host} into ${target}"
-
-    # --slave-info records the replica's replication coordinates (GTIDs) in
-    # the backup; zstd compression is applied per file while copying.
-    xtrabackup --defaults-extra-file="${root_cnf}" --backup \
-        --host="${source_host}" \
-        --target-dir="${partial}" \
-        --parallel="${threads}" \
-        --compress=zstd --compress-threads="${threads}" \
-        --slave-info > "${partial}.log" 2>&1 &
-    if ! wait $!; then
-        log "backup FAILED, last lines of the log:"
-        tail -20 "${partial}.log"
-        mv "${partial}.log" "${target}.failed.log"
-        rm -rf "${partial}" "${running}"
-        touch "${failed}"
-        return 1
-    fi
-
-    if [ "${verify}" = "true" ]; then
-        log "verifying backup (decompress + prepare on a copy)"
-        if ! verify_backup "${partial}" >> "${partial}.log" 2>&1; then
-            log "verification FAILED, last lines of the log:"
-            tail -20 "${partial}.log"
-            mv "${partial}.log" "${target}.failed.log"
-            rm -rf "${partial}" "${running}"
-            touch "${failed}"
-            return 1
-        fi
-    fi
-
-    mv "${partial}.log" "${partial}/backup.log"
-    touch -d "@${start}" "${partial}/.started"
-    mv "${partial}" "${target}"
-    rm -f "${running}" "${failed}"
-    log "backup complete: ${target} ($(du -sh "${target}" | cut -f1), $(( $(date +%s) - start ))s)"
-
-    prune
-}
-
-# ============================================================================
-# Schedule and retention
-# ============================================================================
-
-# die MESSAGE: logs a configuration error and stops the container.
-die() {
-    log "ERROR: $*"
-    exit 1
-}
-
-# cron_field SPEC MIN MAX: prints the values a cron field allows, separated by
-# spaces: *, n, a-b, */s, a-b/s, n/s and comma lists of these. Fails on
-# anything else or on values outside MIN-MAX.
-cron_field() {
-    local parts part range step lo hi v out=""
-    IFS=, read -ra parts <<< "$1"
-    [ "${#parts[@]}" -gt 0 ] || return 1
-    for part in "${parts[@]}"; do
-        range="${part%/*}"
-        step=1
-        [ "${part}" != "${range}" ] && step="${part#*/}"
-        case "${range}" in
-            '*') lo=$2; hi=$3 ;;
-            *-*) lo="${range%-*}"; hi="${range#*-}" ;;
-            *) lo="${range}"; hi="${range}"; [ "${part}" != "${range}" ] && hi=$3 ;;
-        esac
-        [[ "${lo}" =~ ^[0-9]+$ && "${hi}" =~ ^[0-9]+$ && "${step}" =~ ^[0-9]+$ ]] || return 1
-        [ "${step}" -gt 0 ] && [ "${lo}" -ge "$2" ] && [ "${hi}" -le "$3" ] && [ "${lo}" -le "${hi}" ] || return 1
-        for (( v = 10#${lo}; v <= 10#${hi}; v += 10#${step} )); do
-            out+=" ${v}"
-        done
-    done
-    echo "${out}" | tr ' ' '\n' | sed '/^$/d' | sort -n -u | tr '\n' ' '
-}
-
-# in_list LIST VALUE: succeeds when VALUE is one of the space-separated LIST.
-in_list() {
-    [[ " $1 " == *" $2 "* ]]
-}
-
-# parse_settings: checks BACKUP_SCHEDULE and BACKUP_RETENTION and expands the
-# schedule into cron_minutes, cron_hours, cron_days, cron_months and
-# cron_weekdays (Sunday is 0; 7 is accepted for Sunday too).
-parse_settings() {
-    local min hour dom mon dow extra
-    read -r min hour dom mon dow extra <<< "${schedule}"
-    [ -n "${dow}" ] && [ -z "${extra}" ] \
-        || die "BACKUP_SCHEDULE '${schedule}' must have 5 fields: minute hour day-of-month month day-of-week"
-    cron_minutes="$(cron_field "${min}" 0 59)" || die "BACKUP_SCHEDULE: invalid minute '${min}'"
-    cron_hours="$(cron_field "${hour}" 0 23)" || die "BACKUP_SCHEDULE: invalid hour '${hour}'"
-    cron_days="$(cron_field "${dom}" 1 31)" || die "BACKUP_SCHEDULE: invalid day of month '${dom}'"
-    cron_months="$(cron_field "${mon}" 1 12)" || die "BACKUP_SCHEDULE: invalid month '${mon}'"
-    cron_weekdays="$(cron_field "${dow}" 0 7)" || die "BACKUP_SCHEDULE: invalid day of week '${dow}'"
-    in_list "${cron_weekdays}" 7 && cron_weekdays+=" 0"
-    # Standard cron: when both day fields are restricted, either may match.
-    cron_any_day=0
-    [[ "${dom}" == \** ]] && cron_any_day=1
-    [[ "${dow}" == \** ]] && cron_any_day=$(( cron_any_day + 2 ))
-    [[ "${retention}" =~ ^[1-9][0-9]*[hdwMy]$ ]] \
-        || die "BACKUP_RETENTION '${retention}' must be a number and a unit: h, d, w, M or y (e.g. 7d, 1M)"
-}
-
-# day_matches DOM MONTH WEEKDAY: succeeds when BACKUP_SCHEDULE allows that day.
-day_matches() {
-    in_list "${cron_months}" "$2" || return 1
-    case "${cron_any_day}" in
-        3) return 0 ;;
-        1) in_list "${cron_weekdays}" "$3" ;;
-        2) in_list "${cron_days}" "$1" ;;
-        *) in_list "${cron_days}" "$1" || in_list "${cron_weekdays}" "$3" ;;
-    esac
-}
-
-# next_run: epoch of the next time BACKUP_SCHEDULE matches, within a year.
-next_run() {
-    local now day d dom mon dow h m t
-    now=$(date +%s)
-    for (( day = 0; day <= 366; day++ )); do
-        read -r d dom mon dow <<< "$(date -d "today +${day} days" '+%F %-d %-m %w')"
-        day_matches "${dom}" "${mon}" "${dow}" || continue
-        for h in ${cron_hours}; do
-            for m in ${cron_minutes}; do
-                t=$(date -d "${d} ${h}:${m}" +%s)
-                if [ "${t}" -gt "${now}" ]; then
-                    echo "${t}"
-                    return 0
-                fi
-            done
-        done
-    done
-    return 1
-}
-
-# retention_cutoff: epoch before which backups are pruned (BACKUP_RETENTION
-# ago; M is a calendar month).
-retention_cutoff() {
-    local unit
-    case "${retention: -1}" in
-        h) unit=hours ;;
-        d) unit=days ;;
-        w) unit=weeks ;;
-        M) unit=months ;;
-        y) unit=years ;;
-    esac
-    date -d "now - ${retention%?} ${unit}" +%s
-}
-
-# ============================================================================
-# Main
+# Startup
 # ============================================================================
 trap 'log "stopping"; kill $(jobs -p) 2>/dev/null; exit 0' TERM INT
-parse_settings
-rm -f "${failed}" "${next_file}"
+
+# Credentials in an option file readable only inside this container, so the
+# password is never on a command line.
+mkdir -p "${run_dir}" "${chains_dir}" "${binlog_root}"
+rm -f "${run_dir}/ok" "${run_dir}/failed" "${run_dir}/stream.pid"
+( umask 077; printf '[client]\nuser=root\npassword="%s"\n' "${MYSQL_ROOT_PASSWORD}" > "${root_cnf}" )
 
 # Leftovers of a backup interrupted by a stop or crash.
-rm -rf "${backup_root}"/*.partial "${backup_root}"/*.partial.log "${backup_root}/verify.tmp"
+rm -rf "${chains_dir}"/*/*.partial "${chains_dir}"/*/*.partial.log /backups/verify.tmp
+for c in "${chains_dir}"/*/; do
+    [ -d "${c}" ] && [ ! -d "${c}$(basename "${c}")-full" ] && rm -rf "${c}"
+done
+
+# A replica is backed up only once it has cloned the primary and replicates.
+until mysqladmin --defaults-extra-file="${root_cnf}" --host="${source_host}" ping --silent >/dev/null 2>&1 \
+    && { [ "${source_role}" = "primary" ] || [ -n "$(query 'SHOW REPLICA STATUS')" ]; }; do
+    log "waiting for ${source_role} ${source_host}..."
+    sleep 10
+done
 
 stream_binlogs &
 
-wait_for_source
-if [ -z "$(latest_backup)" ]; then
-    log "no backup found, taking the first one now"
-    run_backup
+uuid="$(query 'SELECT @@server_uuid')"
+chain="$(list_chains | tail -1)"
+if [ -n "${chain}" ] && [ "$(cat "${chain}/server_uuid")" = "${uuid}" ]; then
+    touch "${run_dir}/ok"
+else
+    log "no full backup of this server yet, taking one now"
+    # In a subshell, so the backup lock is released when it ends.
+    ( backup full )
 fi
 
-while true; do
-    t="$(next_run)" || die "BACKUP_SCHEDULE '${schedule}' never matches within a year"
-    # After a failure, or without any good backup, retry within an hour.
-    if { [ -f "${failed}" ] || [ -z "$(latest_backup)" ]; } && [ "${t}" -gt $(( $(date +%s) + 3600 )) ]; then
-        t=$(( $(date +%s) + 3600 ))
-    fi
-    echo "${t}" > "${next_file}"
-    log "next backup at $(date -d "@${t}" '+%F %T')"
-    # Checks every minute whether the stream asked for a backup at once.
-    while [ "$(date +%s)" -lt "${t}" ] && [ ! -f "${backup_now}" ]; do
-        sleep 60 & wait $!
-    done
-    if [ -f "${backup_now}" ]; then
-        rm -f "${backup_now}"
-        log "new primary detected, taking a backup now"
-    fi
-    wait_for_source
-    run_backup
-done
+printf '%s /bin/bash %s full\n%s /bin/bash %s incr\n' \
+    "${full_schedule}" "$0" "${incr_schedule}" "$0" > "${run_dir}/crontab"
+log "full backups: ${full_schedule}; incremental backups: ${incr_schedule} (UTC)"
+# -passthrough-logs: job output as is, without supercronic's wrapping.
+supercronic -passthrough-logs "${run_dir}/crontab" &
+# Exit (and let Docker restart the container) if either one stops.
+wait -n
+log "the scheduler or the stream stopped, exiting"
+kill $(jobs -p) 2>/dev/null
+exit 1

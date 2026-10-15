@@ -1,0 +1,50 @@
+{
+  "uid": "custom-postgres-down",
+  "title": "PostgreSQL down",
+  "ruleGroup": "Databases",
+  "condition": "B",
+  "data": [
+    {
+      "refId": "A",
+      "relativeTimeRange": {
+        "from": 900,
+        "to": 0
+      },
+      "datasourceUid": "PA58DA793C7250F1B",
+      "model": {
+        "refId": "A",
+        "expr": "max by (service_name) (pg_up)",
+        "instant": true
+      }
+    },
+    {
+      "refId": "B",
+      "datasourceUid": "__expr__",
+      "model": {
+        "refId": "B",
+        "type": "threshold",
+        "expression": "A",
+        "conditions": [
+          {
+            "evaluator": {
+              "type": "lt",
+              "params": [
+                1
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "noDataState": "OK",
+  "execErrState": "Error",
+  "for": "2m",
+  "labels": {
+    "severity": "critical"
+  },
+  "annotations": {
+    "summary": "PostgreSQL {{ $labels.service_name }} is down",
+    "description": "PMM cannot connect to {{ $labels.service_name }} for 2 minutes."
+  }
+}

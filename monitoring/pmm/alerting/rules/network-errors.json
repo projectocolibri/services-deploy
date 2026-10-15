@@ -1,0 +1,50 @@
+{
+  "uid": "custom-network-errors",
+  "title": "Network errors",
+  "ruleGroup": "Servers",
+  "condition": "B",
+  "data": [
+    {
+      "refId": "A",
+      "relativeTimeRange": {
+        "from": 900,
+        "to": 0
+      },
+      "datasourceUid": "PA58DA793C7250F1B",
+      "model": {
+        "refId": "A",
+        "expr": "sum by (node_name, device) (rate(node_network_receive_errs_total{device!=\"lo\"}[5m]) + rate(node_network_transmit_errs_total{device!=\"lo\"}[5m]))",
+        "instant": true
+      }
+    },
+    {
+      "refId": "B",
+      "datasourceUid": "__expr__",
+      "model": {
+        "refId": "B",
+        "type": "threshold",
+        "expression": "A",
+        "conditions": [
+          {
+            "evaluator": {
+              "type": "gt",
+              "params": [
+                1
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "noDataState": "OK",
+  "execErrState": "Error",
+  "for": "15m",
+  "labels": {
+    "severity": "warning"
+  },
+  "annotations": {
+    "summary": "Network errors on {{ $labels.device }} of {{ $labels.node_name }}",
+    "description": "More than 1 packet per second with errors for 15 minutes ({{ printf \"%.1f\" $values.A.Value }}/s). Usually a faulty network card, cable or driver, or a duplex mismatch; replication and backups over this link may break."
+  }
+}

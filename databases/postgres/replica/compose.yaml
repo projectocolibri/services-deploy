@@ -5,14 +5,19 @@
 #                and read queries.
 # Role:          On its first start it clones the primary with pg_basebackup,
 #                then streams the primary's WAL continuously. Reachable as
-#                postgres-replica. Not a backup: it runs on the same server
-#                and replays every change within seconds.
+#                postgres-replica. Not a backup: it replays every change
+#                within seconds, mistakes included. It archives the WAL it
+#                receives into postgres-replica-backup once
+#                postgres-backup-replica has created its pgBackRest stanza
+#                there.
 # Prerequisites: - The primary reachable at PRIMARY_HOST with the replication
 #                  role and pg_hba rule created (init-master.sh)
 #                - An empty volume for the first clone
 # Variables:     POSTGRES_REPLICA_PRIMARY_HOST, POSTGRES_REPLICATION_USER,
 #                POSTGRES_REPLICATION_PASSWORD.
 #                TZ and VPN_DNS_IP from .env.
+#                Storage (volume name or folder):
+#                POSTGRES_REPLICA_DATA_VOLUME, POSTGRES_REPLICA_BACKUP_VOLUME.
 # ============================================================================
 
 services:
@@ -41,6 +46,12 @@ services:
       REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.
       REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      # pgBackRest settings of archive_command (PGBACKREST_<OPTION>): stanza,
+      # data directory, zstd compression, logs to the server log only.
+      PGBACKREST_STANZA: main
+      PGBACKREST_PG1_PATH: /data/db
+      PGBACKREST_COMPRESS_TYPE: zst
+      PGBACKREST_LOG_LEVEL_FILE: "off"
 
     # --------------------------------------------------------------------------
     # Startup
@@ -53,6 +64,13 @@ services:
     #                              promoted to primary
     #   shared_preload_libraries   pg_stat_monitor, required because the
     #                              extension exists in the cloned databases
+    #   archive_mode=always        archive the WAL received from the primary
+    #                              (a standby archives nothing with "on")
+    #   archive_command            pgBackRest archive-push into the backup
+    #                              volume, once postgres-backup-replica has
+    #                              created the stanza (archive.info); before
+    #                              that, or without backups on this server,
+    #                              the WAL is not archived
     command:
       - postgres
       - -c
@@ -61,6 +79,10 @@ services:
       - wal_keep_size=1GB
       - -c
       - shared_preload_libraries=pg_stat_monitor
+      - -c
+      - archive_mode=always
+      - -c
+      - archive_command=test ! -f /var/lib/pgbackrest/archive/main/archive.info || pgbackrest archive-push %p
 
     # --------------------------------------------------------------------------
     # Network
@@ -82,7 +104,12 @@ services:
     # --------------------------------------------------------------------------
     volumes:
       # Replica's own data directory (PGDATA). Delete it to force a fresh clone.
-      - postgres-replica-data:/data/db
+      - ${POSTGRES_REPLICA_DATA_VOLUME:-postgres-replica-data}:/data/db
+      # Socket directory, shared with the backup container on this server.
+      - postgres-replica-socket:/run/postgresql
+      # pgBackRest repository of postgres-backup-replica, written by
+      # archive_command.
+      - ${POSTGRES_REPLICA_BACKUP_VOLUME:-postgres-replica-backup}:/var/lib/pgbackrest
       # Custom entrypoint wrapper.
       - ./postgres-replica-entrypoint.sh:/usr/local/bin/postgres-replica-entrypoint.sh:ro
 
@@ -100,6 +127,12 @@ services:
 # ----------------------------------------------------------------------------
 # Volumes
 # ----------------------------------------------------------------------------
+# Used when the variable of a mount above (.env) is left at the volume's
+# name; set it to a folder path to keep the data in that folder instead.
 volumes:
   # Replica's data directory, separate from the primary's.
   postgres-replica-data:
+  # Replica's socket directory (no data).
+  postgres-replica-socket:
+  # Backups of the replica, declared in ../backup/compose.yaml.
+  postgres-replica-backup:

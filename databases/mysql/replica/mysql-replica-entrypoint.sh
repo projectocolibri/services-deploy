@@ -13,6 +13,8 @@
 #                     GTID auto-positioning, START REPLICA.
 #                  3. Later starts: replication already configured, only
 #                     super_read_only is turned back on.
+#                Paths 2 and 3 also install the page tracking component
+#                (component_mysqlbackup) for incremental backups.
 # Prerequisites: - Percona Server image (provides /docker-entrypoint.sh, mysql
 #                  and mysqladmin)
 #                - Clone plugin loaded on both servers (compose.yaml)
@@ -50,7 +52,16 @@ query() {
 # Set at runtime rather than as a startup option, because it would also block
 # the entrypoint's first-time setup and the clone, which run as root.
 read_only() {
+    page_tracking
     query "SET GLOBAL super_read_only = ON;" && echo "[replica] super_read_only on"
+}
+
+# page_tracking: installs component_mysqlbackup if missing. The server then
+# records which pages change, so incremental backups (mysql-backup-replica)
+# read only those. INSTALL COMPONENT is not replicated, so each server
+# installs it; it must run before super_read_only, which blocks it.
+page_tracking() {
+    [ "$(query "SELECT COUNT(*) FROM mysql.component WHERE component_urn = 'file://component_mysqlbackup'")" = "1" ]         || { query "INSTALL COMPONENT 'file://component_mysqlbackup';" && echo "[replica] page tracking installed"; }
 }
 
 # ----------------------------------------------------------------------------

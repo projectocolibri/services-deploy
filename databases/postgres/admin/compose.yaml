@@ -13,6 +13,7 @@
 #                POSTGRES_ADMIN_HOSTS, POSTGRES_ADMIN_HOSTS_LABELS,
 #                POSTGRES_ADMIN_HOSTS_USER.
 #                TZ from .env.
+#                Storage (volume name or folder): POSTGRES_ADMIN_DATA_VOLUME.
 # ============================================================================
 
 services:
@@ -63,13 +64,15 @@ services:
     # --------------------------------------------------------------------------
     volumes:
       # pgAdmin's settings database (users, preferences, saved passwords).
-      - pgadmin-data:/var/lib/pgadmin
+      - ${POSTGRES_ADMIN_DATA_VOLUME:-pgadmin-data}:/var/lib/pgadmin
       # Custom entrypoint wrapper.
       - ./pgadmin-entrypoint.sh:/usr/local/bin/pgadmin-entrypoint.sh:ro
 
 # ----------------------------------------------------------------------------
 # Volumes
 # ----------------------------------------------------------------------------
+# Used when the variable of a mount above (.env) is left at the volume's
+# name; set it to a folder path to keep the data in that folder instead.
 volumes:
   # pgAdmin data. Delete it to re-apply POSTGRES_ADMIN_EMAIL and POSTGRES_ADMIN_PASSWORD.
   pgadmin-data:

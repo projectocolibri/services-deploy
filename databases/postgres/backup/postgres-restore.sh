@@ -1,43 +1,52 @@
 #!/bin/bash
 # ============================================================================
-# PostgreSQL restore into a temporary server
+# PostgreSQL restore into a temporary server (pgBackRest)
 #
-# Purpose:       Restores the newest base backup, optionally recovered to a
-#                point in time with the streamed WAL, into a separate temporary
-#                server. Production is never touched.
+# Purpose:       Restores a pgBackRest repository, optionally to a point in
+#                time, into a separate temporary server. Production is never
+#                touched.
 # Role:          Disaster recovery and restore testing. From the temporary
 #                server, dump what you need (a table, a database) or inspect
-#                it, then remove it. Run it on the server holding the backups.
-#                  1. extracts the newest backup into a new Docker volume
-#                  2. copies the archived WAL next to it (the streamed files
-#                     are readable only by root) and adds the segment still
-#                     being written, so the latest changes are recoverable
-#                  3. starts the temporary server RESTORE_NAME, which replays
-#                     WAL up to TARGET_TIME (UTC), or all of it, and promotes
+#                it, then remove it. Run it on the server holding the backup
+#                volume.
+#                  1. pgbackrest restore into a new Docker volume: it picks
+#                     the newest backup that ends before TARGET_TIME (or the
+#                     newest one) and sets restore_command to archive-get
+#                  2. starts the temporary server RESTORE_NAME, which replays
+#                     the archived WAL up to TARGET_TIME (UTC), or all of it,
+#                     and promotes
 # Prerequisites: - bash and docker on the host (Linux, or Git Bash on Windows)
-#                - Backups in POSTGRES_BACKUP_DIR (base/ and wal/)
+#                - The repository on this server: the volume or folder of
+#                  postgres-backup-primary or postgres-backup-replica
+#                  (POSTGRES_PRIMARY_BACKUP_VOLUME / POSTGRES_REPLICA_BACKUP_VOLUME in
+#                  .env), or a copy brought back with the sync service
 #
 # Usage:
-#   databases/postgres/backup/postgres-restore.sh ["YYYY-MM-DD HH:MM:SS"]
+#   databases/postgres/backup/postgres-restore.sh [primary|replica] ["YYYY-MM-DD HH:MM:SS"]
 #   docker exec -it postgres-restore psql -U postgres              # inspect
 #   docker exec postgres-restore pg_dump -U postgres -t table db > table.sql
 #   docker rm -f postgres-restore && docker volume rm postgres-restore
+#   List the backups: docker compose exec postgres-backup-replica pgbackrest info
 #
 # Variables:
-#   TARGET_TIME       (arg 1) recover up to this UTC time. Default: empty
-#                     (recover everything received)
-#   POSTGRES_BACKUP_DIR (env or root .env) PostgreSQL backup directory;
-#                     relative to this script's directory. Default:
-#                     ./backups/postgres next to this script (the same rule as
-#                     compose.yaml)
+#   SOURCE            (arg) primary or replica: which side's backups. Default:
+#                     the only one on this server
+#   TARGET_TIME       (arg) recover up to this UTC time. Default: empty
+#                     (recover everything archived)
+#   REPO_VOLUME       (env) repository volume or folder to restore from,
+#                     overrides SOURCE (e.g. a copy restored from off-site)
 #   RESTORE_NAME      (env) name of the temporary container and volume.
 #                     Default: postgres-restore
+#   PROJECT_NAME, POSTGRES_USER, POSTGRES_PRIMARY_BACKUP_VOLUME,
+#   POSTGRES_REPLICA_BACKUP_VOLUME
+#                     (env or root .env) volume name prefix, superuser and
+#                     the backup locations. Defaults: services, postgres, the
+#                     volumes postgres-primary-backup, postgres-replica-backup
 #   MSYS_NO_PATHCONV  (env, exported) stops Git Bash from rewriting paths
-#   script_dir, stack_dir, root_dir
-#                     (local) this script's directory, the PostgreSQL stack,
-#                     the repository root
-#   backup_dir        (local) resolved PostgreSQL backup directory
-#   latest, seg       (local, in container) newest backup, partial segment name
+#   script_dir, root_dir
+#                     (local) this script's directory, the repository root
+#   volume, user      (local) resolved repository (volume or folder) and
+#                     superuser
 # ============================================================================
 
 set -euo pipefail
@@ -46,11 +55,18 @@ export MSYS_NO_PATHCONV=1
 # ----------------------------------------------------------------------------
 # Settings
 # ----------------------------------------------------------------------------
-target_time="${1:-}"
+source_side=""
+target_time=""
+for arg in "$@"; do
+    case "${arg}" in
+        primary | replica) source_side="${arg}" ;;
+        *) target_time="${arg}" ;;
+    esac
+done
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-stack_dir="$(dirname "${script_dir}")"
-root_dir="$(cd "${stack_dir}/../.." && pwd)"
+root_dir="$(cd "${script_dir}/../../.." && pwd)"
 name="${RESTORE_NAME:-postgres-restore}"
+image=percona/percona-distribution-postgresql:17
 
 # setting KEY FILE...: value of KEY from the environment, else from the first
 # file that sets it to a non-empty value (empty if none).
@@ -64,20 +80,57 @@ setting() {
     echo "${value}"
 }
 
-# Same rule as compose.yaml: POSTGRES_BACKUP_DIR, else ./backups/postgres;
-# relative paths are relative to this script's directory.
-backup_dir="$(setting POSTGRES_BACKUP_DIR "${root_dir}/.env")"
-backup_dir="${backup_dir:-./backups/postgres}"
-case "${backup_dir}" in
-    /* | [A-Za-z]:*) ;;
-    *) backup_dir="${script_dir}/${backup_dir#./}" ;;
-esac
-
 log() {
     echo "[postgres-restore] $*"
 }
 
-[ -d "${backup_dir}/base" ] || { log "no backups in ${backup_dir}/base"; exit 1; }
+project="$(setting PROJECT_NAME "${root_dir}/.env")"
+project="${project:-services}"
+user="$(setting POSTGRES_USER "${root_dir}/.env")"
+user="${user:-postgres}"
+
+# ----------------------------------------------------------------------------
+# Repository (volume or folder)
+# ----------------------------------------------------------------------------
+# storage SIDE: the backup volume (with the project prefix) or folder of
+# SIDE, from POSTGRES_<SIDE>_BACKUP_VOLUME (.env, default: the volume
+# postgres-<side>-backup); empty if it does not exist on this server.
+storage() {
+    local value
+    value="$(setting "POSTGRES_${1^^}_BACKUP_VOLUME" "${root_dir}/.env")"
+    value="${value:-postgres-$1-backup}"
+    if [[ "${value}" == */* || "${value}" == *\\* ]]; then
+        [ -d "${value}" ] && echo "${value}"
+    else
+        docker volume inspect "${project}_${value}" >/dev/null 2>&1 && echo "${project}_${value}"
+    fi
+    return 0
+}
+
+volume="${REPO_VOLUME:-}"
+if [ -z "${volume}" ]; then
+    if [ -n "${source_side}" ]; then
+        volume="$(storage "${source_side}")"
+        [ -n "${volume}" ] || { log "no backups of the ${source_side} on this server (POSTGRES_${source_side^^}_BACKUP_VOLUME)"; exit 1; }
+    else
+        found=()
+        for side in primary replica; do
+            v="$(storage "${side}")"
+            [ -n "${v}" ] && found+=("${v}")
+        done
+        if [ "${#found[@]}" -ne 1 ]; then
+            log "${#found[@]} backup locations on this server; choose one: primary or replica"
+            exit 1
+        fi
+        volume="${found[0]}"
+    fi
+fi
+# A path is a folder, anything else a volume.
+if [[ "${volume}" == */* || "${volume}" == *\\* ]]; then
+    [ -d "${volume}" ] || { log "folder ${volume} not found"; exit 1; }
+else
+    docker volume inspect "${volume}" >/dev/null 2>&1 || { log "volume ${volume} not found"; exit 1; }
+fi
 if docker container inspect "${name}" >/dev/null 2>&1 || docker volume inspect "${name}" >/dev/null 2>&1; then
     log "${name} already exists. Remove it first:"
     log "  docker rm -f ${name}; docker volume rm ${name}"
@@ -85,53 +138,32 @@ if docker container inspect "${name}" >/dev/null 2>&1 || docker volume inspect "
 fi
 
 # ----------------------------------------------------------------------------
-# 1-2. Extract the newest backup and prepare recovery
+# 1. Restore the backup
 # ----------------------------------------------------------------------------
-# The backup was taken from the standby: standby.signal is replaced by
-# recovery.signal (recover, then promote) and primary_conninfo is cleared so
-# the temporary server never connects to the primary.
+# --archive-mode=off: the temporary server never archives. A backup taken
+# from the standby restores the same way: recovery.signal (not
+# standby.signal) ignores its primary_conninfo.
+restore_args=(--pg1-path=/data/db --archive-mode=off)
+if [ -n "${target_time}" ]; then
+    restore_args+=(--type=time "--target=${target_time}+00" --target-action=promote)
+fi
 docker volume create "${name}" >/dev/null
-log "extracting the newest backup into volume ${name}"
-docker run --rm --user root \
-    -v "${backup_dir}:/backups:ro" -v "${name}:/data/db" -e TARGET_TIME="${target_time}" \
-    percona/percona-distribution-postgresql:17 bash -c '
-        set -e
-        latest=$(find /backups/base -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
-            -regex ".*/[0-9]{8}-[0-9]{6}" | sort | tail -1)
-        [ -n "${latest}" ] || { echo "no complete backup found"; exit 1; }
-        echo "[postgres-restore] backup: ${latest}"
-        lz4 -dc "${latest}/base.tar.lz4" | tar -C /data/db -xf -
-
-        mkdir -p /data/db/restore_wal
-        find /backups/wal -maxdepth 1 -name "*.gz" -exec cp {} /data/db/restore_wal/ \;
-        for f in /backups/wal/*.gz.partial; do
-            [ -e "${f}" ] || continue
-            seg=$(basename "${f}" .gz.partial)
-            gunzip -c "${f}" > "/data/db/pg_wal/${seg}" 2>/dev/null || true
-            truncate -s 16M "/data/db/pg_wal/${seg}"
-            echo "[postgres-restore] included the segment being written: ${seg}"
-        done
-
-        {
-            echo "primary_conninfo = '"''"'"
-            echo "restore_command = '"'"'gunzip -c /data/db/restore_wal/%f.gz > %p'"'"'"
-            [ -n "${TARGET_TIME}" ] && echo "recovery_target_time = '"'"'${TARGET_TIME}+00'"'"'"
-            echo "recovery_target_action = '"'"'promote'"'"'"
-        } >> /data/db/postgresql.auto.conf
-
-        rm -f /data/db/standby.signal
-        touch /data/db/recovery.signal
-        chown -R postgres:postgres /data/db
-        chmod 700 /data/db'
+log "restoring from ${volume}${target_time:+ to ${target_time} UTC} into volume ${name}"
+docker run --rm -v "${volume}:/var/lib/pgbackrest:ro" -v "${name}:/data/db" \
+    -e PGBACKREST_STANZA=main -e PGBACKREST_LOG_LEVEL_CONSOLE=info -e PGBACKREST_LOG_LEVEL_FILE=off \
+    --entrypoint pgbackrest "${image}" restore "${restore_args[@]}" \
+    | grep -E 'repo1: restore backup set|restore command end' | sed 's/^/[postgres-restore]   /'
 
 # ----------------------------------------------------------------------------
-# 3. Start the temporary server and wait for recovery
+# 2. Start the temporary server and wait for recovery
 # ----------------------------------------------------------------------------
-log "starting temporary server ${name}, recovering${target_time:+ up to ${target_time} UTC}"
-docker run -d --name "${name}" -v "${name}:/data/db" \
-    percona/percona-distribution-postgresql:17 \
+# The repository is mounted read-only for archive-get (restore_command).
+log "starting temporary server ${name}, replaying WAL"
+docker run -d --name "${name}" -v "${name}:/data/db" -v "${volume}:/var/lib/pgbackrest:ro" \
+    -e PGBACKREST_STANZA=main -e PGBACKREST_LOG_LEVEL_FILE=off \
+    "${image}" \
     postgres -c shared_preload_libraries=pg_stat_monitor -c logging_collector=off >/dev/null
-until docker exec "${name}" psql -U postgres -tAc 'SELECT NOT pg_is_in_recovery()' 2>/dev/null | grep -q t; do
+until docker exec "${name}" psql -U "${user}" -d postgres -tAc 'SELECT NOT pg_is_in_recovery()' 2>/dev/null | grep -q t; do
     if [ "$(docker inspect -f '{{.State.Running}}' "${name}")" != "true" ]; then
         log "recovery FAILED:"
         docker logs "${name}" 2>&1 | tail -15
@@ -139,10 +171,11 @@ until docker exec "${name}" psql -U postgres -tAc 'SELECT NOT pg_is_in_recovery(
     fi
     sleep 2
 done
-docker logs "${name}" 2>&1 | grep -E 'recovery stopping|archive recovery complete' | sed 's/^/[postgres-restore]   /'
+docker logs "${name}" 2>&1 | grep -E 'recovery stopping|archive recovery complete|last completed transaction' \
+    | sed 's/^/[postgres-restore]   /'
 
 log "done. The temporary server ${name} holds the restored data:"
-log "  docker exec -it ${name} psql -U postgres"
-log "  docker exec ${name} pg_dump -U postgres [-t table] <database> > dump.sql"
+log "  docker exec -it ${name} psql -U ${user}"
+log "  docker exec ${name} pg_dump -U ${user} [-t table] <database> > dump.sql"
 log "remove it when finished:"
 log "  docker rm -f ${name}; docker volume rm ${name}"

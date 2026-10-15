@@ -1,0 +1,50 @@
+{
+  "uid": "custom-postgres-wal-archiving-failing",
+  "title": "PostgreSQL WAL archiving failing",
+  "ruleGroup": "Databases",
+  "condition": "B",
+  "data": [
+    {
+      "refId": "A",
+      "relativeTimeRange": {
+        "from": 900,
+        "to": 0
+      },
+      "datasourceUid": "PA58DA793C7250F1B",
+      "model": {
+        "refId": "A",
+        "expr": "max by (service_name) (increase(pg_stat_archiver_failed_count[10m]))",
+        "instant": true
+      }
+    },
+    {
+      "refId": "B",
+      "datasourceUid": "__expr__",
+      "model": {
+        "refId": "B",
+        "type": "threshold",
+        "expression": "A",
+        "conditions": [
+          {
+            "evaluator": {
+              "type": "gt",
+              "params": [
+                0
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "noDataState": "OK",
+  "execErrState": "Error",
+  "for": "10m",
+  "labels": {
+    "severity": "critical"
+  },
+  "annotations": {
+    "summary": "WAL archiving is failing on {{ $labels.service_name }}",
+    "description": "archive_command keeps failing, so the pgBackRest backups of this server lose point-in-time recovery and WAL piles up in pg_wal. Check the logs of the server and of its backup container."
+  }
+}

@@ -20,6 +20,8 @@
 #                  JAVA_SERVICE_EXAMPLE_PORT
 # Variables:     TZ, JAVA_SERVICE_EXAMPLE_PORT and JAVA_SERVICE_EXAMPLE_LANG
 #                from .env.
+#                Storage (volume name or folder):
+#                JAVA_SERVICE_EXAMPLE_DATA_VOLUME.
 # ============================================================================
 
 services:
@@ -62,7 +64,7 @@ services:
     volumes:
       # Workspace (-data) and home of the app user: preferences and files the
       # app keeps between restarts and new versions.
-      - java-service-example-data:/data
+      - ${JAVA_SERVICE_EXAMPLE_DATA_VOLUME:-java-service-example-data}:/data
 
     # --------------------------------------------------------------------------
     # Health check
@@ -80,6 +82,8 @@ services:
 # ----------------------------------------------------------------------------
 # Volumes
 # ----------------------------------------------------------------------------
+# Used when the variable of a mount above (.env) is left at the volume's
+# name; set it to a folder path to keep the data in that folder instead.
 volumes:
   # Persistent data of the app (/data).
   java-service-example-data:

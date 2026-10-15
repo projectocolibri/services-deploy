@@ -1,0 +1,50 @@
+{
+  "uid": "custom-mysql-replication-lag",
+  "title": "MySQL replica lag",
+  "ruleGroup": "Databases",
+  "condition": "B",
+  "data": [
+    {
+      "refId": "A",
+      "relativeTimeRange": {
+        "from": 900,
+        "to": 0
+      },
+      "datasourceUid": "PA58DA793C7250F1B",
+      "model": {
+        "refId": "A",
+        "expr": "max by (service_name) (mysql_slave_status_seconds_behind_source)",
+        "instant": true
+      }
+    },
+    {
+      "refId": "B",
+      "datasourceUid": "__expr__",
+      "model": {
+        "refId": "B",
+        "type": "threshold",
+        "expression": "A",
+        "conditions": [
+          {
+            "evaluator": {
+              "type": "gt",
+              "params": [
+                300
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "noDataState": "OK",
+  "execErrState": "Error",
+  "for": "5m",
+  "labels": {
+    "severity": "warning"
+  },
+  "annotations": {
+    "summary": "MySQL {{ $labels.service_name }} is {{ $values.A.Value | humanizeDuration }} behind",
+    "description": "The replica has been more than 5 minutes behind its source for 5 minutes."
+  }
+}

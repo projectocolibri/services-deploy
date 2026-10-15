@@ -1,0 +1,50 @@
+{
+  "uid": "custom-memory-high",
+  "title": "High memory",
+  "ruleGroup": "Servers",
+  "condition": "B",
+  "data": [
+    {
+      "refId": "A",
+      "relativeTimeRange": {
+        "from": 900,
+        "to": 0
+      },
+      "datasourceUid": "PA58DA793C7250F1B",
+      "model": {
+        "refId": "A",
+        "expr": "100 * (1 - max by (node_name) (node_memory_MemAvailable_bytes) / max by (node_name) (node_memory_MemTotal_bytes))",
+        "instant": true
+      }
+    },
+    {
+      "refId": "B",
+      "datasourceUid": "__expr__",
+      "model": {
+        "refId": "B",
+        "type": "threshold",
+        "expression": "A",
+        "conditions": [
+          {
+            "evaluator": {
+              "type": "gt",
+              "params": [
+                90
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "noDataState": "OK",
+  "execErrState": "Error",
+  "for": "10m",
+  "labels": {
+    "severity": "warning"
+  },
+  "annotations": {
+    "summary": "Memory of {{ $labels.node_name }} is {{ printf \"%.0f\" $values.A.Value }}% used",
+    "description": "Less than 10% of the memory has been available (free plus reclaimable cache) for 10 minutes. When it runs out, the kernel kills processes, usually the largest: a database. Check which containers use it (Containers overview dashboard)."
+  }
+}

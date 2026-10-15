@@ -15,6 +15,7 @@
 #                  (12+ characters)
 # Variables:     PORTAINER_ADMIN_PASSWORD, PORTAINER_PORT.
 #                TZ from .env.
+#                Storage (volume name or folder): PORTAINER_DATA_VOLUME.
 # ============================================================================
 
 services:
@@ -60,7 +61,7 @@ services:
       # Docker socket: read/write, Portainer manages containers through it.
       - /var/run/docker.sock:/var/run/docker.sock
       # Portainer state: users, settings, environments.
-      - portainer-data:/data
+      - ${PORTAINER_DATA_VOLUME:-portainer-data}:/data
 
 # ----------------------------------------------------------------------------
 # Configs
@@ -73,6 +74,8 @@ configs:
 # ----------------------------------------------------------------------------
 # Volumes
 # ----------------------------------------------------------------------------
+# Used when the variable of a mount above (.env) is left at the volume's
+# name; set it to a folder path to keep the data in that folder instead.
 volumes:
   # Portainer data. Deleting it resets users and settings (the admin user is
   # recreated from PORTAINER_ADMIN_PASSWORD).

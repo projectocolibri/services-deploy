@@ -12,12 +12,14 @@
 #                there, over TLS).
 # Prerequisites: - 2+ CPU cores and 4+ GB RAM, plus disk for PMM_DATA_RETENTION
 #                - PMM_ADMIN_PASSWORD set before the first start
-#                - pmm-entrypoint.sh and alerting/slack.yaml next to this file
+#                - pmm-entrypoint.sh, alerting/slack.yaml and alerting/rules/
+#                  next to this file
 # Variables:     PMM_HTTP_PORT, PMM_ADMIN_PASSWORD, PMM_DATA_RETENTION,
 #                ALERT_EMAIL_ENABLED,
 #                SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM,
 #                ALERT_SLACK_ENABLED, SLACK_WEBHOOK_URL.
 #                TZ from .env.
+#                Storage (volume name or folder): PMM_DATA_VOLUME.
 # ============================================================================
 
 services:
@@ -73,8 +75,9 @@ services:
     # --------------------------------------------------------------------------
     # Startup
     # --------------------------------------------------------------------------
-    # Sets the HTTP port, installs or removes the Slack contact point, then
-    # runs the image entrypoint (/opt/entrypoint.sh).
+    # Sets the HTTP port, installs or removes the Slack contact point,
+    # creates the missing alert rules of alerting/rules/ once Grafana is up,
+    # then runs the image entrypoint (/opt/entrypoint.sh).
     entrypoint: ["/bin/bash", "/usr/local/bin/pmm-entrypoint.sh"]
 
     # --------------------------------------------------------------------------
@@ -83,13 +86,14 @@ services:
     # No published ports: reachable only through the VPN.
     volumes:
       # All PMM state: metrics, QAN, Grafana settings, alert rules.
-      - pmm-data:/srv
+      - ${PMM_DATA_VOLUME:-pmm-data}:/srv
       # Custom dashboards, provisioned into the Grafana folder "Custom" (the
       # directory name). PMM re-reads it every 60 s, so JSON edits apply
       # without a restart. Percona's own dashboards in the same tree are
       # overwritten on every start, which is why ours are separate files.
       - ./dashboards/Custom:/usr/share/percona-dashboards/panels/pmm-app/dist/dashboards/Custom:ro
-      # Alerting provisioning files, installed by the entrypoint wrapper.
+      # Alerting files used by the entrypoint wrapper: the Slack contact point
+      # and the alert rules (rules/*.json).
       - ./alerting:/etc/pmm-alerting:ro
       # Entrypoint wrapper.
       - ./pmm-entrypoint.sh:/usr/local/bin/pmm-entrypoint.sh:ro
@@ -109,6 +113,8 @@ services:
 # ----------------------------------------------------------------------------
 # Volumes
 # ----------------------------------------------------------------------------
+# Used when the variable of a mount above (.env) is left at the volume's
+# name; set it to a folder path to keep the data in that folder instead.
 volumes:
   # PMM Server data. Deleting it loses metrics history, settings and alerts.
   pmm-data:

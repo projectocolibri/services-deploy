@@ -1,0 +1,50 @@
+{
+  "uid": "custom-mysql-replication-stopped",
+  "title": "MySQL replication stopped",
+  "ruleGroup": "Databases",
+  "condition": "B",
+  "data": [
+    {
+      "refId": "A",
+      "relativeTimeRange": {
+        "from": 900,
+        "to": 0
+      },
+      "datasourceUid": "PA58DA793C7250F1B",
+      "model": {
+        "refId": "A",
+        "expr": "min by (service_name) (mysql_slave_status_replica_io_running * mysql_slave_status_replica_sql_running)",
+        "instant": true
+      }
+    },
+    {
+      "refId": "B",
+      "datasourceUid": "__expr__",
+      "model": {
+        "refId": "B",
+        "type": "threshold",
+        "expression": "A",
+        "conditions": [
+          {
+            "evaluator": {
+              "type": "lt",
+              "params": [
+                1
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "noDataState": "OK",
+  "execErrState": "Error",
+  "for": "2m",
+  "labels": {
+    "severity": "critical"
+  },
+  "annotations": {
+    "summary": "MySQL replication stopped on {{ $labels.service_name }}",
+    "description": "The replica I/O or SQL thread is not running. Check SHOW REPLICA STATUS (Last_IO_Error, Last_SQL_Error)."
+  }
+}

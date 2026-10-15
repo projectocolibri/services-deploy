@@ -12,6 +12,7 @@
 #                MYSQL_REPLICATION_USER, MYSQL_REPLICATION_PASSWORD,
 #                MYSQL_MONITOR_USER, MYSQL_MONITOR_PASSWORD, MYSQL_DATABASES.
 #                TZ from .env.
+#                Storage (volume name or folder): MYSQL_PRIMARY_DATA_VOLUME.
 # ============================================================================
 
 services:
@@ -92,7 +93,7 @@ services:
     # --------------------------------------------------------------------------
     volumes:
       # Database files.
-      - mysql-data:/var/lib/mysql
+      - ${MYSQL_PRIMARY_DATA_VOLUME:-mysql-data}:/var/lib/mysql
       # Custom entrypoint wrapper.
       - ./mysql-master-entrypoint.sh:/usr/local/bin/mysql-master-entrypoint.sh:ro
       # Creates the replication and monitoring users on first initialization.
@@ -113,6 +114,8 @@ services:
 # ----------------------------------------------------------------------------
 # Volumes
 # ----------------------------------------------------------------------------
+# Used when the variable of a mount above (.env) is left at the volume's
+# name; set it to a folder path to keep the data in that folder instead.
 volumes:
   # Primary's data directory. Deleting it deletes every database.
   mysql-data:

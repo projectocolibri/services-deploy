@@ -1,0 +1,50 @@
+{
+  "uid": "custom-container-restarting",
+  "title": "Container restarting",
+  "ruleGroup": "Servers",
+  "condition": "B",
+  "data": [
+    {
+      "refId": "A",
+      "relativeTimeRange": {
+        "from": 900,
+        "to": 0
+      },
+      "datasourceUid": "PA58DA793C7250F1B",
+      "model": {
+        "refId": "A",
+        "expr": "max by (name) (changes(container_start_time_seconds{name!=\"\"}[15m]))",
+        "instant": true
+      }
+    },
+    {
+      "refId": "B",
+      "datasourceUid": "__expr__",
+      "model": {
+        "refId": "B",
+        "type": "threshold",
+        "expression": "A",
+        "conditions": [
+          {
+            "evaluator": {
+              "type": "gt",
+              "params": [
+                2
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "noDataState": "OK",
+  "execErrState": "Error",
+  "for": "0s",
+  "labels": {
+    "severity": "warning"
+  },
+  "annotations": {
+    "summary": "Container {{ $labels.name }} keeps restarting",
+    "description": "It restarted more than twice in 15 minutes. Check its logs (Dozzle)."
+  }
+}

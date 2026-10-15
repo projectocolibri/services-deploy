@@ -9,6 +9,8 @@
 #                  replica (the replica's volume was attached to the primary
 #                  service), its replication settings are removed, so it never
 #                  follows the old primary again.
+#                - Page tracking: installs component_mysqlbackup, used by
+#                  incremental backups.
 #                - Databases: creates each database in DATABASES that does not
 #                  exist yet and grants MYSQL_USER all privileges on it.
 #                  Existing databases and their data are left untouched. The
@@ -54,6 +56,16 @@ forget_source() {
     if [ -n "$(query "SHOW REPLICA STATUS")" ]; then
         query "STOP REPLICA; RESET REPLICA ALL;" && echo "[primary] promoted: replication settings removed"
     fi
+}
+
+# ----------------------------------------------------------------------------
+# Page tracking
+# ----------------------------------------------------------------------------
+# Installs component_mysqlbackup if missing. The server then records which
+# pages change, so incremental backups (mysql-backup-primary) read only
+# those. INSTALL COMPONENT is not replicated: the replica installs its own.
+page_tracking() {
+    [ "$(query "SELECT COUNT(*) FROM mysql.component WHERE component_urn = 'file://component_mysqlbackup'")" = "1" ]         || { query "INSTALL COMPONENT 'file://component_mysqlbackup';" && echo "[primary] page tracking installed"; }
 }
 
 # ----------------------------------------------------------------------------
@@ -109,6 +121,7 @@ after_start() {
     done
 
     forget_source
+    page_tracking
     create_databases
 }
 

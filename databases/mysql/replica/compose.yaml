@@ -14,6 +14,7 @@
 # Variables:     MYSQL_ROOT_PASSWORD, MYSQL_REPLICA_PRIMARY_HOST,
 #                MYSQL_REPLICATION_USER, MYSQL_REPLICATION_PASSWORD.
 #                TZ and VPN_DNS_IP from .env.
+#                Storage (volume name or folder): MYSQL_REPLICA_DATA_VOLUME.
 # ============================================================================
 
 services:
@@ -94,7 +95,7 @@ services:
     # --------------------------------------------------------------------------
     volumes:
       # Replica's own data directory. Delete it to force a fresh clone.
-      - mysql-replica-data:/var/lib/mysql
+      - ${MYSQL_REPLICA_DATA_VOLUME:-mysql-replica-data}:/var/lib/mysql
       # Custom entrypoint wrapper.
       - ./mysql-replica-entrypoint.sh:/usr/local/bin/mysql-replica-entrypoint.sh:ro
 
@@ -113,6 +114,8 @@ services:
 # ----------------------------------------------------------------------------
 # Volumes
 # ----------------------------------------------------------------------------
+# Used when the variable of a mount above (.env) is left at the volume's
+# name; set it to a folder path to keep the data in that folder instead.
 volumes:
   # Replica's data directory, separate from the primary's.
   mysql-replica-data:

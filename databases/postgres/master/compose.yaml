@@ -8,11 +8,17 @@
 # Prerequisites: - Credentials from .env
 #                - postgres-master-entrypoint.sh and init-master.sh next to
 #                  this file
+#                WAL is archived into postgres-primary-backup once
+#                postgres-backup-primary has created its pgBackRest stanza
+#                there; until then (or without backups on this side) it is
+#                not archived.
 # Variables:     POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_REPLICATION_USER,
 #                POSTGRES_REPLICATION_PASSWORD, POSTGRES_MONITOR_USER,
-#                POSTGRES_MONITOR_PASSWORD, POSTGRES_MAX_SLOT_WAL_KEEP_SIZE,
-#                POSTGRES_APP_USER, POSTGRES_APP_PASSWORD, POSTGRES_DATABASES.
+#                POSTGRES_MONITOR_PASSWORD, POSTGRES_APP_USER,
+#                POSTGRES_APP_PASSWORD, POSTGRES_DATABASES.
 #                TZ from .env.
+#                Storage (volume name or folder):
+#                POSTGRES_PRIMARY_DATA_VOLUME, POSTGRES_PRIMARY_BACKUP_VOLUME.
 # ============================================================================
 
 services:
@@ -62,6 +68,12 @@ services:
       APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
       # DATABASES: databases created on every start if missing.
       DATABASES: ${POSTGRES_DATABASES}
+      # pgBackRest settings of archive_command (PGBACKREST_<OPTION>): stanza,
+      # data directory, zstd compression, logs to the server log only.
+      PGBACKREST_STANZA: main
+      PGBACKREST_PG1_PATH: /data/db
+      PGBACKREST_COMPRESS_TYPE: zst
+      PGBACKREST_LOG_LEVEL_FILE: "off"
 
     # --------------------------------------------------------------------------
     # Startup
@@ -76,9 +88,17 @@ services:
     #   wal_keep_size=1GB          WAL kept for a replica that was briefly
     #                              disconnected
     #   shared_preload_libraries   load pg_stat_monitor for PMM Query Analytics
-    #   max_slot_wal_keep_size     most WAL a replication slot (the backup WAL
-    #                              stream) may hold back, so an unreachable
-    #                              backup server cannot fill this disk
+    #   archive_mode=on            hand every completed WAL file to
+    #                              archive_command
+    #   archive_command            pgBackRest archive-push into the backup
+    #                              volume, once postgres-backup-primary has
+    #                              created the stanza (archive.info); before
+    #                              that, or without backups on this server,
+    #                              the WAL is not archived
+    #   archive_timeout=60         switch to a new WAL file at least every
+    #                              minute while there are writes, so the
+    #                              archive (and the standby's) is never more
+    #                              than about a minute behind
     command:
       - postgres
       - -c
@@ -90,7 +110,11 @@ services:
       - -c
       - shared_preload_libraries=pg_stat_monitor
       - -c
-      - max_slot_wal_keep_size=${POSTGRES_MAX_SLOT_WAL_KEEP_SIZE}
+      - archive_mode=on
+      - -c
+      - archive_command=test ! -f /var/lib/pgbackrest/archive/main/archive.info || pgbackrest archive-push %p
+      - -c
+      - archive_timeout=60
 
     # --------------------------------------------------------------------------
     # Network
@@ -107,7 +131,12 @@ services:
     # --------------------------------------------------------------------------
     volumes:
       # Database files (the image's PGDATA is /data/db).
-      - postgres-data:/data/db
+      - ${POSTGRES_PRIMARY_DATA_VOLUME:-postgres-data}:/data/db
+      # Socket directory, shared with the backup containers on this server.
+      - postgres-socket:/run/postgresql
+      # pgBackRest repository of postgres-backup-primary, written by
+      # archive_command.
+      - ${POSTGRES_PRIMARY_BACKUP_VOLUME:-postgres-primary-backup}:/var/lib/pgbackrest
       # Custom entrypoint wrapper.
       - ./postgres-master-entrypoint.sh:/usr/local/bin/postgres-master-entrypoint.sh:ro
       # Creates roles, the query analytics extension and the replication
@@ -129,6 +158,12 @@ services:
 # ----------------------------------------------------------------------------
 # Volumes
 # ----------------------------------------------------------------------------
+# Used when the variable of a mount above (.env) is left at the volume's
+# name; set it to a folder path to keep the data in that folder instead.
 volumes:
   # Primary's data directory. Deleting it deletes every database.
   postgres-data:
+  # Primary's socket directory (no data).
+  postgres-socket:
+  # Backups of the primary, declared in ../backup/compose.yaml.
+  postgres-primary-backup:

@@ -1,0 +1,50 @@
+{
+  "uid": "custom-disk-almost-full",
+  "title": "Disk almost full",
+  "ruleGroup": "Servers",
+  "condition": "B",
+  "data": [
+    {
+      "refId": "A",
+      "relativeTimeRange": {
+        "from": 900,
+        "to": 0
+      },
+      "datasourceUid": "PA58DA793C7250F1B",
+      "model": {
+        "refId": "A",
+        "expr": "min by (node_name, device) (node_filesystem_avail_bytes{fstype!~\"tmpfs|ramfs|squashfs|overlay\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|ramfs|squashfs|overlay\"})",
+        "instant": true
+      }
+    },
+    {
+      "refId": "B",
+      "datasourceUid": "__expr__",
+      "model": {
+        "refId": "B",
+        "type": "threshold",
+        "expression": "A",
+        "conditions": [
+          {
+            "evaluator": {
+              "type": "lt",
+              "params": [
+                0.1
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "noDataState": "OK",
+  "execErrState": "Error",
+  "for": "10m",
+  "labels": {
+    "severity": "warning"
+  },
+  "annotations": {
+    "summary": "Disk {{ $labels.device }} on {{ $labels.node_name }} is almost full",
+    "description": "Less than 10% free space for 10 minutes. Databases and backups stop when it fills up."
+  }
+}

@@ -1,115 +1,149 @@
 # ============================================================================
-# MySQL backups
+# MySQL backups (Percona XtraBackup)
 #
-# Purpose:       Daily physical backups of the MySQL replica plus continuous
-#                copies of the primary's binary logs, for full and
-#                point-in-time recovery.
-# Role:          Runs on the server with the replica (which can be another
-#                server than the primary, connected through the VPN client).
-#                One container, mysql-backup.sh:
-#                  - in the background: streams the primary's binary logs
-#                  - in the foreground: Percona XtraBackup of the local
-#                    replica, verified, with retention
-#                Backups are written to MYSQL_BACKUP_DIR on this server.
-# Prerequisites: - The replica (../replica) running on this server: its data
-#                  volume is read by XtraBackup
-#                - The primary reachable as mysql-primary (same server, or
-#                  through the VPN client and VPN_DNS_IP)
-#                - Enough disk in MYSQL_BACKUP_DIR for about
-#                  every backup kept within MYSQL_BACKUP_RETENTION plus the
-#                  binary logs; ideally a separate disk
-# Variables:     MYSQL_ROOT_PASSWORD, MYSQL_REPLICATION_USER,
-#                MYSQL_REPLICATION_PASSWORD, MYSQL_REPLICA_PRIMARY_HOST,
-#                MYSQL_BACKUP_DIR, MYSQL_BACKUP_SCHEDULE,
-#                MYSQL_BACKUP_RETENTION, MYSQL_BACKUP_VERIFY,
-#                MYSQL_BACKUP_THREADS, MYSQL_BINLOG_SERVER_ID.
-#                TZ and VPN_DNS_IP from .env.
+# Purpose:       Full and incremental physical backups plus continuous copies
+#                of the binary logs, for full and point-in-time recovery,
+#                taken on the primary's server, the replica's server, or both.
+# Role:          - mysql-backup-primary (profile mysql-backup-primary): backs
+#                  up the local primary into the volume mysql-primary-backup
+#                  on the primary's server
+#                - mysql-backup-replica (profile mysql-backup-replica): backs
+#                  up the local replica into the volume mysql-replica-backup
+#                  on the replica's server, so the primary is not loaded. The
+#                  replica's own binary logs hold every replicated
+#                  transaction, with the primary's GTIDs.
+#                Each container (mysql-backup.sh) backs up only its local
+#                server, so each enabled side keeps its own, independent
+#                backups:
+#                  - in the background: streams the server's binary logs
+#                  - on FULL_SCHEDULE / INCREMENTAL_SCHEDULE (supercronic):
+#                    XtraBackup full or incremental backups (page tracking),
+#                    verified, with retention
+# Prerequisites: - The server being backed up running on this server
+#                  (../master or ../replica): its data volume is read by
+#                  XtraBackup
+#                - Disk for the backups in Docker's volume directory
+# Variables:     MYSQL_ROOT_PASSWORD, MYSQL_BACKUP_FULL_SCHEDULE,
+#                MYSQL_BACKUP_INCREMENTAL_SCHEDULE, MYSQL_BACKUP_RETENTION_DAYS,
+#                MYSQL_BACKUP_VERIFY, MYSQL_BACKUP_THREADS. TZ from .env.
+#                Storage (volume name or folder): MYSQL_PRIMARY_DATA_VOLUME,
+#                MYSQL_REPLICA_DATA_VOLUME, MYSQL_PRIMARY_BACKUP_VOLUME,
+#                MYSQL_REPLICA_BACKUP_VOLUME.
 # ============================================================================
 
+# ----------------------------------------------------------------------------
+# Shared settings of both backup containers
+# ----------------------------------------------------------------------------
+x-mysql-backup: &mysql-backup
+  # --------------------------------------------------------------------------
+  # Image and restart policy
+  # --------------------------------------------------------------------------
+  # XtraBackup plus supercronic (./Dockerfile). Runs as root to read the
+  # server's data files and write the backups.
+  build:
+    context: .
+  restart: always
+  user: root
+
+  # --------------------------------------------------------------------------
+  # Startup
+  # --------------------------------------------------------------------------
+  entrypoint: ["/bin/bash", "/usr/local/bin/mysql-backup.sh"]
+
+  # --------------------------------------------------------------------------
+  # Health check
+  # --------------------------------------------------------------------------
+  # Healthy while the binary log stream runs, once a backup exists and while
+  # the last backup did not fail.
+  healthcheck:
+    test: ["CMD", "/bin/bash", "/usr/local/bin/mysql-backup.sh", "health"]
+    interval: 1m
+    timeout: 10s
+    retries: 3
+    start_period: 1h
+
+# ----------------------------------------------------------------------------
+# Shared backup settings
+# ----------------------------------------------------------------------------
+x-mysql-backup-environment: &mysql-backup-environment
+  # TZ: container time zone. The XtraBackup image has no time zone data, so
+  # the schedules and logs are always in UTC.
+  TZ: ${TZ}
+  # MYSQL_ROOT_PASSWORD: root password of the server backed up.
+  MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+  # FULL_SCHEDULE / INCREMENTAL_SCHEDULE: cron expressions of the full and
+  # incremental backups.
+  FULL_SCHEDULE: ${MYSQL_BACKUP_FULL_SCHEDULE}
+  INCREMENTAL_SCHEDULE: ${MYSQL_BACKUP_INCREMENTAL_SCHEDULE}
+  # RETENTION_DAYS: any moment of the last RETENTION_DAYS days stays
+  # restorable.
+  RETENTION_DAYS: ${MYSQL_BACKUP_RETENTION_DAYS}
+  # BACKUP_VERIFY: "true" prepares a copy of every backup (with the backups
+  # it depends on), like a restore.
+  BACKUP_VERIFY: ${MYSQL_BACKUP_VERIFY}
+  # BACKUP_THREADS: parallel copy and compression threads.
+  BACKUP_THREADS: ${MYSQL_BACKUP_THREADS}
+
 services:
-  mysql-backup:
-    # --------------------------------------------------------------------------
-    # Image and restart policy
-    # --------------------------------------------------------------------------
-    # XtraBackup major version must match the server's (8.4); the image also
-    # has mysqlbinlog and the mysql client. Runs as root to read the replica's
-    # data files and write the backups.
-    image: percona/percona-xtrabackup:8.4
-    restart: always
+  # ==========================================================================
+  # Backups of the primary (on the primary's server)
+  # ==========================================================================
+  mysql-backup-primary:
+    <<: *mysql-backup
     # Runs when COMPOSE_PROFILES (.env) includes this profile.
-    profiles: [mysql-backup]
-    user: root
-
-    # --------------------------------------------------------------------------
-    # Backup and stream settings
-    # --------------------------------------------------------------------------
+    profiles: [mysql-backup-primary]
     environment:
-      # TZ: container time zone. The XtraBackup image has no time zone data,
-      # so BACKUP_SCHEDULE and logs are always in UTC.
-      TZ: ${TZ}
-      # BACKUP_SOURCE_HOST: replica to back up (on this server), also asked
-      # where the primary's binary log is.
-      BACKUP_SOURCE_HOST: mysql-replica
-      # MYSQL_ROOT_PASSWORD: root password of the replica.
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      # BACKUP_SCHEDULE: cron expression of the full backups.
-      BACKUP_SCHEDULE: ${MYSQL_BACKUP_SCHEDULE}
-      # BACKUP_RETENTION: how long backups are kept (h, d, w, M, y).
-      BACKUP_RETENTION: ${MYSQL_BACKUP_RETENTION}
-      # BACKUP_VERIFY: "true" decompresses and prepares a copy of every backup.
-      BACKUP_VERIFY: ${MYSQL_BACKUP_VERIFY}
-      # BACKUP_THREADS: parallel copy and compression threads.
-      BACKUP_THREADS: ${MYSQL_BACKUP_THREADS}
-      # PRIMARY_HOST: primary to stream binary logs from.
-      PRIMARY_HOST: ${MYSQL_REPLICA_PRIMARY_HOST}
-      # REPLICATION_USER: replication account on the primary.
-      REPLICATION_USER: ${MYSQL_REPLICATION_USER}
-      # REPLICATION_PASSWORD: password of REPLICATION_USER.
-      REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
-      # BINLOG_SERVER_ID: server ID the stream uses on the primary; unique
-      # among all servers and streams.
-      BINLOG_SERVER_ID: ${MYSQL_BINLOG_SERVER_ID}
-
-    # --------------------------------------------------------------------------
-    # Startup
-    # --------------------------------------------------------------------------
-    entrypoint: ["/bin/bash", "/usr/local/bin/mysql-backup.sh"]
-
-    # --------------------------------------------------------------------------
-    # Network
-    # --------------------------------------------------------------------------
-    # VPN_DNS_IP: resolves mysql-primary when the primary runs on another server.
-    dns:
-      - ${VPN_DNS_IP}
-
-    # --------------------------------------------------------------------------
-    # Data, backups and scripts
-    # --------------------------------------------------------------------------
+      <<: *mysql-backup-environment
+      # BACKUP_SOURCE_HOST: server backed up (the local primary).
+      BACKUP_SOURCE_HOST: mysql-primary
+      # BACKUP_SOURCE_ROLE: primary, so backups start at once.
+      BACKUP_SOURCE_ROLE: primary
+      # BINLOG_SERVER_ID: server ID of the binary log stream on the primary;
+      # differs from the servers (1, 2) and from the replica side's stream.
+      BINLOG_SERVER_ID: 101
     volumes:
-      # Replica's data directory (same path as in the replica container),
-      # read-only: the backup can never modify the replica's data.
-      - mysql-replica-data:/var/lib/mysql:ro
-      # Backup destination on this server: MYSQL_BACKUP_DIR (.env), with full/
-      # and binlog/ inside. Relative paths are relative to this directory.
-      - ${MYSQL_BACKUP_DIR}:/backups
-      # Backup and stream script.
+      # Primary's data directory, read-only: the backup never changes it.
+      - ${MYSQL_PRIMARY_DATA_VOLUME:-mysql-data}:/var/lib/mysql:ro
+      # Backups (chains/) and binary logs (binlog/).
+      - ${MYSQL_PRIMARY_BACKUP_VOLUME:-mysql-primary-backup}:/backups
+      # Startup, backup, schedule and health check script.
       - ./mysql-backup.sh:/usr/local/bin/mysql-backup.sh:ro
 
-    # --------------------------------------------------------------------------
-    # Health check
-    # --------------------------------------------------------------------------
-    # Healthy while the binary log stream runs, the last backup did not fail
-    # and the next scheduled one is not over an hour overdue.
-    healthcheck:
-      test: ["CMD", "/bin/bash", "/usr/local/bin/mysql-backup.sh", "health"]
-      interval: 1m
-      timeout: 10s
-      retries: 3
-      start_period: 1h
+  # ==========================================================================
+  # Backups of the replica (on the replica's server)
+  # ==========================================================================
+  mysql-backup-replica:
+    <<: *mysql-backup
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [mysql-backup-replica]
+    environment:
+      <<: *mysql-backup-environment
+      # BACKUP_SOURCE_HOST: server backed up (the local replica).
+      BACKUP_SOURCE_HOST: mysql-replica
+      # BACKUP_SOURCE_ROLE: replica, so backups wait until it has cloned the
+      # primary and replicates.
+      BACKUP_SOURCE_ROLE: replica
+      # BINLOG_SERVER_ID: server ID of the binary log stream on the replica;
+      # differs from the servers (1, 2) and from the primary side's stream.
+      BINLOG_SERVER_ID: 102
+    volumes:
+      # Replica's data directory, read-only: the backup never changes it.
+      - ${MYSQL_REPLICA_DATA_VOLUME:-mysql-replica-data}:/var/lib/mysql:ro
+      # Backups (chains/) and binary logs (binlog/).
+      - ${MYSQL_REPLICA_BACKUP_VOLUME:-mysql-replica-backup}:/backups
+      # Startup, backup, schedule and health check script.
+      - ./mysql-backup.sh:/usr/local/bin/mysql-backup.sh:ro
 
 # ----------------------------------------------------------------------------
 # Volumes
 # ----------------------------------------------------------------------------
+# Used when the variable of a mount above (.env) is left at the volume's
+# name; set it to a folder path to keep the data in that folder instead.
 volumes:
-  # The replica's data volume, declared in ../replica/compose.yaml.
+  # Servers' data volumes, declared in ../master and ../replica.
+  mysql-data:
   mysql-replica-data:
+  # Backups and binary logs. Copy them off-site with the sync service
+  # (SYNC_VOLUMES). Deleting one deletes its backups.
+  mysql-primary-backup:
+  mysql-replica-backup:

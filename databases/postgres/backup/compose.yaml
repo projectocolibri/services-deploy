@@ -1,100 +1,241 @@
 # ============================================================================
-# PostgreSQL backups
+# PostgreSQL backups (pgBackRest)
 #
-# Purpose:       Daily base backups of the PostgreSQL standby plus continuous
-#                copies of the primary's WAL, for full and point-in-time
-#                recovery.
-# Role:          Runs on the server with the replica (which can be another
-#                server than the primary, connected through the VPN client).
-#                One container, postgres-backup.sh:
-#                  - in the background: streams the primary's WAL through a
-#                    replication slot
-#                  - in the foreground: pg_basebackup of the local standby,
-#                    verified and compressed, with retention
-#                Backups are written to POSTGRES_BACKUP_DIR on this server.
-# Prerequisites: - The replica (../replica) running on this server
-#                - The primary reachable as postgres-primary (same server, or
-#                  through the VPN client and VPN_DNS_IP)
-#                - max_slot_wal_keep_size set on the primary (../master), so
-#                  the slot cannot fill the primary's disk while this server is
-#                  away
-#                - Enough disk in POSTGRES_BACKUP_DIR for about
-#                  every backup kept within POSTGRES_BACKUP_RETENTION plus
-#                  the WAL; ideally a separate disk
-# Variables:     POSTGRES_REPLICATION_USER, POSTGRES_REPLICATION_PASSWORD,
-#                POSTGRES_REPLICA_PRIMARY_HOST, POSTGRES_BACKUP_DIR,
-#                POSTGRES_BACKUP_SCHEDULE, POSTGRES_BACKUP_RETENTION,
-#                POSTGRES_BACKUP_VERIFY, POSTGRES_WAL_SLOT.
-#                TZ and VPN_DNS_IP from .env.
+# Purpose:       Full and differential backups plus continuous WAL archiving,
+#                for full and point-in-time recovery, taken on the primary's
+#                server, the replica's server, or both.
+# Role:          - postgres-backup-primary (profile postgres-backup-primary):
+#                  backs up the local primary into the volume
+#                  postgres-primary-backup on the primary's server. The
+#                  primary archives its WAL into the same volume.
+#                - postgres-backup-replica (profile postgres-backup-replica):
+#                  backs up the local standby into the volume
+#                  postgres-replica-backup on the replica's server, so the
+#                  primary is not loaded. The standby archives the WAL it
+#                  receives into the same volume (archive_mode=always).
+#                  pgBackRest still starts and stops each backup on the
+#                  primary, through postgres-backup-server.
+#                - postgres-backup-server (profile postgres-primary): pgBackRest
+#                  TLS server next to the primary, used only by
+#                  postgres-backup-replica. Starts with the primary and
+#                  creates the TLS certificates in ./certs on its first start.
+#                Each enabled side keeps its own, independent backups.
+#                Both containers: postgres-backup.sh creates the pgBackRest
+#                stanza, takes a full backup at once if there is none, then
+#                runs the schedule with supercronic.
+# Prerequisites: - The server being backed up running on this server, with its
+#                  socket and backup volumes (../master or ../replica)
+#                - Replica side only: ca.crt, client.crt and client.key from
+#                  ./certs on the primary's server copied to ./certs here
+#                  (nothing to copy when both run on one server), and the
+#                  primary's server reachable through the VPN
+#                  (postgres-backup-server, port 8432)
+#                - Disk for the backups in Docker's volume directory
+# Variables:     POSTGRES_USER, POSTGRES_BACKUP_FULL_SCHEDULE,
+#                POSTGRES_BACKUP_DIFF_SCHEDULE, POSTGRES_BACKUP_RETENTION_DAYS,
+#                POSTGRES_BACKUP_PROCESS_MAX. TZ and VPN_DNS_IP from .env.
+#                Storage (volume name or folder):
+#                POSTGRES_PRIMARY_DATA_VOLUME, POSTGRES_REPLICA_DATA_VOLUME,
+#                POSTGRES_PRIMARY_BACKUP_VOLUME,
+#                POSTGRES_REPLICA_BACKUP_VOLUME.
 # ============================================================================
 
+# ----------------------------------------------------------------------------
+# Shared settings of both backup containers
+# ----------------------------------------------------------------------------
+x-postgres-backup: &postgres-backup
+  # --------------------------------------------------------------------------
+  # Image and restart policy
+  # --------------------------------------------------------------------------
+  # The server image plus supercronic (./Dockerfile). Runs as postgres, the
+  # owner of the data directory and of the repository.
+  build:
+    context: .
+  restart: always
+
+  # --------------------------------------------------------------------------
+  # Startup
+  # --------------------------------------------------------------------------
+  entrypoint: ["/bin/bash", "/usr/local/bin/postgres-backup.sh"]
+
+  # --------------------------------------------------------------------------
+  # Health check
+  # --------------------------------------------------------------------------
+  # Healthy once a backup exists, while the last backup did not fail and the
+  # server's last WAL archive attempt succeeded.
+  healthcheck:
+    test: ["CMD", "/bin/bash", "/usr/local/bin/postgres-backup.sh", "health"]
+    interval: 1m
+    timeout: 10s
+    retries: 3
+    start_period: 1h
+
+# ----------------------------------------------------------------------------
+# Shared pgBackRest settings (PGBACKREST_<OPTION> sets the option <option>)
+# ----------------------------------------------------------------------------
+x-pgbackrest-environment: &pgbackrest-environment
+  # TZ: time zone of the schedules and log timestamps.
+  TZ: ${TZ}
+  # FULL_SCHEDULE / DIFF_SCHEDULE: cron expressions of the full and
+  # differential backups (postgres-backup.sh).
+  FULL_SCHEDULE: ${POSTGRES_BACKUP_FULL_SCHEDULE}
+  DIFF_SCHEDULE: ${POSTGRES_BACKUP_DIFF_SCHEDULE}
+  # Stanza (pgBackRest's name for the cluster) and the local server: data
+  # directory, socket directory and superuser.
+  PGBACKREST_STANZA: main
+  PGBACKREST_PG1_PATH: /data/db
+  PGBACKREST_PG1_SOCKET_PATH: /run/postgresql
+  PGBACKREST_PG1_USER: ${POSTGRES_USER}
+  # Repository: the backup volume mounted at /var/lib/pgbackrest.
+  PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
+  # Retention: keep enough full backups to restore any moment of the last
+  # POSTGRES_BACKUP_RETENTION_DAYS days; older backups and the WAL they need
+  # are removed after each backup.
+  PGBACKREST_REPO1_RETENTION_FULL_TYPE: time
+  PGBACKREST_REPO1_RETENTION_FULL: ${POSTGRES_BACKUP_RETENTION_DAYS}
+  # Backup: start at once (fast checkpoint), zstd compression, parallel
+  # processes.
+  PGBACKREST_START_FAST: "y"
+  PGBACKREST_COMPRESS_TYPE: zst
+  PGBACKREST_PROCESS_MAX: ${POSTGRES_BACKUP_PROCESS_MAX}
+  # Logs to the container output only.
+  PGBACKREST_LOG_LEVEL_CONSOLE: info
+  PGBACKREST_LOG_LEVEL_FILE: "off"
+
 services:
-  postgres-backup:
+  # ==========================================================================
+  # Backups of the primary (on the primary's server)
+  # ==========================================================================
+  postgres-backup-primary:
+    <<: *postgres-backup
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [postgres-backup-primary]
+    environment:
+      <<: *pgbackrest-environment
+    volumes:
+      # Primary's data directory, read-only: the backup never changes it.
+      - ${POSTGRES_PRIMARY_DATA_VOLUME:-postgres-data}:/data/db:ro
+      # Primary's socket directory: pgBackRest connects through it.
+      - postgres-socket:/run/postgresql
+      # Repository, also mounted in the primary for WAL archiving.
+      - ${POSTGRES_PRIMARY_BACKUP_VOLUME:-postgres-primary-backup}:/var/lib/pgbackrest
+      # Startup, schedule and health check script.
+      - ./postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro
+
+  # ==========================================================================
+  # Backups of the replica (on the replica's server)
+  # ==========================================================================
+  postgres-backup-replica:
+    <<: *postgres-backup
+    # Runs when COMPOSE_PROFILES (.env) includes this profile.
+    profiles: [postgres-backup-replica]
+    # Starts as root only to copy the client certificate where postgres can
+    # read it; then runs as postgres (postgres-backup.sh).
+    user: root
+    environment:
+      <<: *pgbackrest-environment
+      # BACKUP_STANDBY: copy the files from the standby (pg1, local); only
+      # backup start and stop run on the primary (pg2).
+      PGBACKREST_BACKUP_STANDBY: "y"
+      # The primary, through postgres-backup-server over TLS.
+      PGBACKREST_PG2_HOST: postgres-backup-server
+      PGBACKREST_PG2_HOST_TYPE: tls
+      PGBACKREST_PG2_HOST_CERT_FILE: /tmp/pgbackrest-certs/client.crt
+      PGBACKREST_PG2_HOST_KEY_FILE: /tmp/pgbackrest-certs/client.key
+      PGBACKREST_PG2_HOST_CA_FILE: /tmp/pgbackrest-certs/ca.crt
+      PGBACKREST_PG2_PATH: /data/db
+      PGBACKREST_PG2_SOCKET_PATH: /run/postgresql
+      PGBACKREST_PG2_USER: ${POSTGRES_USER}
+    # VPN_DNS_IP: resolves postgres-backup-server when the primary runs on
+    # another server.
+    dns:
+      - ${VPN_DNS_IP}
+    volumes:
+      # Standby's data directory, read-only: the backup never changes it.
+      - ${POSTGRES_REPLICA_DATA_VOLUME:-postgres-replica-data}:/data/db:ro
+      # Standby's socket directory: pgBackRest connects through it.
+      - postgres-replica-socket:/run/postgresql
+      # Repository, also mounted in the standby for WAL archiving.
+      - ${POSTGRES_REPLICA_BACKUP_VOLUME:-postgres-replica-backup}:/var/lib/pgbackrest
+      # Client certificate for postgres-backup-server, copied from the
+      # primary's server.
+      - ./certs:/certs:ro
+      # Startup, schedule and health check script.
+      - ./postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro
+
+  # ==========================================================================
+  # pgBackRest TLS server (next to the primary)
+  # ==========================================================================
+  postgres-backup-server:
     # --------------------------------------------------------------------------
     # Image and restart policy
     # --------------------------------------------------------------------------
-    # Same image as the servers, for matching client tools. Runs as root to
-    # write the backups regardless of the directory's owner.
     image: percona/percona-distribution-postgresql:17
     restart: always
-    # Runs when COMPOSE_PROFILES (.env) includes this profile.
-    profiles: [postgres-backup]
+    # Runs with the primary: postgres-backup-replica, usually on another
+    # server, needs it there.
+    profiles: [postgres-primary]
+    # Starts as root only to create the certificates; then runs as postgres
+    # (postgres-backup.sh server).
     user: root
 
     # --------------------------------------------------------------------------
-    # Backup and stream settings
+    # TLS server settings
     # --------------------------------------------------------------------------
     environment:
-      # TZ: time zone of BACKUP_SCHEDULE and log timestamps.
+      # TZ: time zone of the log timestamps.
       TZ: ${TZ}
-      # BACKUP_SOURCE_HOST: standby to back up (on this server).
-      BACKUP_SOURCE_HOST: postgres-replica
-      # PRIMARY_HOST: primary to stream WAL from.
-      PRIMARY_HOST: ${POSTGRES_REPLICA_PRIMARY_HOST}
-      # REPLICATION_USER: replication role.
-      REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
-      # REPLICATION_PASSWORD: password of REPLICATION_USER.
-      REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
-      # WAL_SLOT: replication slot on the primary.
-      WAL_SLOT: ${POSTGRES_WAL_SLOT}
-      # BACKUP_SCHEDULE: cron expression of the base backups.
-      BACKUP_SCHEDULE: ${POSTGRES_BACKUP_SCHEDULE}
-      # BACKUP_RETENTION: how long backups are kept (h, d, w, M, y).
-      BACKUP_RETENTION: ${POSTGRES_BACKUP_RETENTION}
-      # BACKUP_VERIFY: "true" checks every backup with pg_verifybackup.
-      BACKUP_VERIFY: ${POSTGRES_BACKUP_VERIFY}
+      # Listen on every interface, port 8432, with this server's certificate.
+      PGBACKREST_TLS_SERVER_ADDRESS: "*"
+      PGBACKREST_TLS_SERVER_CERT_FILE: /certs/server.crt
+      PGBACKREST_TLS_SERVER_KEY_FILE: /certs/server.key
+      PGBACKREST_TLS_SERVER_CA_FILE: /certs/ca.crt
+      # Only clients with the certificate named pgbackrest-client, for the
+      # stanza main.
+      PGBACKREST_TLS_SERVER_AUTH: pgbackrest-client=main
+      PGBACKREST_LOG_LEVEL_CONSOLE: info
+      PGBACKREST_LOG_LEVEL_FILE: "off"
 
     # --------------------------------------------------------------------------
     # Startup
     # --------------------------------------------------------------------------
-    entrypoint: ["/bin/bash", "/usr/local/bin/postgres-backup.sh"]
+    # Creates the certificates if ./certs has none, then serves. Only
+    # clients with the client certificate signed by this CA get in.
+    entrypoint: ["/bin/bash", "/usr/local/bin/postgres-backup.sh", "server"]
 
     # --------------------------------------------------------------------------
     # Network
     # --------------------------------------------------------------------------
-    # VPN_DNS_IP: resolves postgres-primary when the primary runs on another
-    # server.
-    dns:
-      - ${VPN_DNS_IP}
+    networks:
+      default:
+        aliases:
+          - postgres-backup-server
 
     # --------------------------------------------------------------------------
-    # Backups and scripts
+    # Data and certificates
     # --------------------------------------------------------------------------
     volumes:
-      # Backup destination on this server: POSTGRES_BACKUP_DIR (.env), with
-      # base/ and wal/ inside. Relative paths are relative to this directory.
-      - ${POSTGRES_BACKUP_DIR}:/backups
-      # Backup and stream script.
+      # Primary's data directory, read-only: a few files are copied from it.
+      - ${POSTGRES_PRIMARY_DATA_VOLUME:-postgres-data}:/data/db:ro
+      # Primary's socket directory: backup start and stop run through it.
+      - postgres-socket:/run/postgresql
+      # Certificates, created here on the first start.
+      - ./certs:/certs
+      # Startup script (certificates and server).
       - ./postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro
 
-    # --------------------------------------------------------------------------
-    # Health check
-    # --------------------------------------------------------------------------
-    # Healthy while the WAL stream runs, the last backup did not fail and the
-    # next scheduled one is not over an hour overdue.
-    healthcheck:
-      test: ["CMD", "/bin/bash", "/usr/local/bin/postgres-backup.sh", "health"]
-      interval: 1m
-      timeout: 10s
-      retries: 3
-      start_period: 1h
+# ----------------------------------------------------------------------------
+# Volumes
+# ----------------------------------------------------------------------------
+# Used when the variable of a mount above (.env) is left at the volume's
+# name; set it to a folder path to keep the data in that folder instead.
+volumes:
+  # Servers' data and socket volumes, declared in ../master and ../replica.
+  postgres-data:
+  postgres-socket:
+  postgres-replica-data:
+  postgres-replica-socket:
+  # Repositories: backups and archived WAL. Copy them off-site with the sync
+  # service (SYNC_VOLUMES). Deleting one deletes its backups.
+  postgres-primary-backup:
+  postgres-replica-backup:
