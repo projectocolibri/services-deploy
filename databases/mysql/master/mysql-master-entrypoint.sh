@@ -82,7 +82,8 @@ create_databases() {
     # at the database level for every database name. The explicit grants repair
     # existing databases; the wildcard grant covers databases created later.
     if [ -n "${MYSQL_USER}" ]; then
-        query "REVOKE ALL PRIVILEGES, GRANT OPTION ON *.* FROM '${MYSQL_USER}'@'%';" || return 1
+        query "REVOKE ALL PRIVILEGES ON *.* FROM '${MYSQL_USER}'@'%';" || return 1
+        query "REVOKE GRANT OPTION ON *.* FROM '${MYSQL_USER}'@'%';" || return 1
         while IFS= read -r db; do
             [ -n "${db}" ] || continue
             query "GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${MYSQL_USER}'@'%';" || return 1
