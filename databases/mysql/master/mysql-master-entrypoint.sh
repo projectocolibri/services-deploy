@@ -79,9 +79,14 @@ create_databases() {
     local db dbs
 
     # Remove any global grant from earlier versions, then grant all privileges
-    # at the database level for every database name.
+    # at the database level for every database name. The explicit grants repair
+    # existing databases; the wildcard grant covers databases created later.
     if [ -n "${MYSQL_USER}" ]; then
         query "REVOKE ALL PRIVILEGES, GRANT OPTION ON *.* FROM '${MYSQL_USER}'@'%';" || return 1
+        while IFS= read -r db; do
+            [ -n "${db}" ] || continue
+            query "GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${MYSQL_USER}'@'%';" || return 1
+        done < <(query "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')")
         query "GRANT ALL PRIVILEGES ON \`%\`.* TO '${MYSQL_USER}'@'%';" || return 1
         echo "[primary] all database privileges granted: ${MYSQL_USER}"
     fi
@@ -123,7 +128,7 @@ after_start() {
 
     forget_source
     page_tracking
-    create_databases
+    create_databases || echo "[primary] application database privileges failed"
 }
 
 after_start &
