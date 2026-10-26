@@ -235,7 +235,6 @@ volumes:
   postgres-socket:
   postgres-replica-data:
   postgres-replica-socket:
-  # Repositories: backups and archived WAL. Copy them off-site with the sync
-  # service (SYNC_VOLUMES). Deleting one deletes its backups.
+  # Repositories: backups and archived WAL. Deleting one deletes its backups.
   postgres-primary-backup:
   postgres-replica-backup:

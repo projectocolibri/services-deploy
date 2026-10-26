@@ -86,7 +86,15 @@ has_backup() {
 # postgres-backup-server to replace them.
 create_certs() {
     local work name cn
-    [ -f "${certs_dir}/ca.crt" ] && return 0
+    if [ -f "${certs_dir}/ca.crt" ]; then
+        for name in ca.crt server.crt server.key client.crt client.key; do
+            [ -f "${certs_dir}/${name}" ] || return 1
+        done
+        chown 26:26 "${certs_dir}"/*.crt "${certs_dir}"/*.key
+        chmod 644 "${certs_dir}"/*.crt
+        chmod 600 "${certs_dir}"/*.key
+        return 0
+    fi
     log "creating TLS certificates in databases/postgres/backup/certs"
     work="$(mktemp -d)"
     openssl req -x509 -new -nodes -newkey rsa:4096 -sha256 -days 3650 \
@@ -127,6 +135,7 @@ if [ "$(id -u)" = "0" ] && [ "${1:-}" != "health" ]; then
     cp "${certs_dir}/ca.crt" "${certs_dir}/client.crt" "${certs_dir}/client.key" "${private_certs}/"
     chown -R 26:26 "${private_certs}"
     chmod 600 "${private_certs}/client.key"
+    chown -R 26:26 /var/lib/pgbackrest
     exec gosu postgres /bin/bash "$0" "$@"
 fi
 

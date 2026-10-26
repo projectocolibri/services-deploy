@@ -3,7 +3,7 @@
 #
 # Purpose:       Single entry point for the whole deployment. It defines no
 #                services of its own: it includes the gateway, monitoring,
-#                database, sync and app stacks and declares the network they
+#                database and app stacks and declares the network they
 #                all share.
 # Role:          `docker compose up -d` from this directory starts the services
 #                of the server roles in COMPOSE_PROFILES (.env), as one
@@ -43,9 +43,6 @@ include:
 
   # PostgreSQL: Percona Distribution primary, read-only replica and pgAdmin.
   - path: ./databases/postgres/compose.yaml
-
-  # Sync: copies Docker volumes (the backups) off-site with rclone.
-  - path: ./sync/compose.yaml
 
   # Apps: Java service and Angular SSR app examples. No variables:
   # settings are fixed in each app's Dockerfile.

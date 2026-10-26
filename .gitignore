@@ -30,16 +30,6 @@ databases/postgres/backup/certs/*
 !databases/postgres/backup/certs/.gitkeep
 
 # ----------------------------------------------------------------------------
-# Off-site sync
-# ----------------------------------------------------------------------------
-# rclone remotes and their access tokens (`docker compose run --rm sync
-# config`).
-sync/rclone/*
-!sync/rclone/.gitkeep
-# Empty folder mounted as SYNC_DATA_DIR when it is not set.
-sync/data/
-
-# ----------------------------------------------------------------------------
 # App binaries and build output
 # ----------------------------------------------------------------------------
 # App exports (apps/<app>/source/) and JRE archives (apps/<app>/jre.tar.gz)

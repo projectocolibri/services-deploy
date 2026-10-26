@@ -97,7 +97,7 @@ services:
     # --------------------------------------------------------------------------
     # Image and restart policy
     # --------------------------------------------------------------------------
-    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    image: ghcr.io/google/cadvisor:v0.60.6
     restart: always
     # Runs when COMPOSE_PROFILES (.env) includes this profile.
     profiles: [metrics]

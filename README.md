@@ -2,7 +2,7 @@
 
 # Services deploy
 
-**Self-hosted MySQL and PostgreSQL with replicas, point-in-time backups, off-site copies, VPN, HTTPS gateway and monitoring — one repository, one `.env`, one `docker compose up -d`.**
+**Self-hosted MySQL and PostgreSQL with replicas, point-in-time backups, VPN, HTTPS gateway and monitoring — one repository, one `.env`, one `docker compose up -d`.**
 
 ![Docker Compose](https://img.shields.io/badge/Docker%20Compose-v2.24%2B-2496ED?logo=docker&logoColor=white)
 ![MySQL](https://img.shields.io/badge/Percona%20Server-8.4-4479A1?logo=mysql&logoColor=white)
@@ -23,7 +23,7 @@
  ─────────────────┴──── internal network ─┴─────────────────────────
   mysql-primary     ── replication ──►  mysql-replica     (read only)
   postgres-primary  ── streaming ────►  postgres-replica  (read only)
-  backups ──► off-site (rclone)    PMM · Dozzle · Portainer · admin panels
+  backups                         PMM · Dozzle · Portainer · admin panels
 ```
 
 ## ✨ Key features
@@ -32,7 +32,6 @@
 - **Replicas out of the box.** Both databases clone their primary on first start and replicate continuously (GTID for MySQL, streaming for PostgreSQL).
 - **Point-in-time recovery.** XtraBackup full + incremental and pgBackRest full + differential, with binary logs / WAL. Restore any moment of the last 14 days into a temporary server.
 - **Backups where you want them.** Take them on the primary's server, the replica's server, or both, with no load on the primary when the replica does it.
-- **Off-site copies that never delete.** rclone to Google Drive, S3, SFTP and 70+ others, encrypted, with old versions kept.
 - **Private by default.** Only the VPN and the HTTP gateway face the internet; everything else is reached through WireGuard.
 - **Monitoring and alerts provisioned.** PMM dashboards, Query Analytics, and alert rules (databases down, replication, WAL archiving, disk, CPU, memory) created on startup.
 - **Storage you choose.** Each service keeps its data in a Docker volume or in any folder you set.
@@ -44,7 +43,6 @@
 | Orchestration | **Docker Compose** v2.24+ (`include`, profiles) | One project, one network, per-server roles |
 | Databases | **Percona Server for MySQL 8.4**, **Percona Distribution for PostgreSQL 17** | Primaries and read-only replicas |
 | Backups | **Percona XtraBackup 8.4**, **pgBackRest 2.59**, **supercronic** | Physical backups, log archiving, schedules |
-| Off-site | **rclone** | Encrypted copies to cloud or remote storage |
 | Gateway | **WireGuard** (linuxserver/wireguard), **nginx** | Private access, TLS termination for apps |
 | Monitoring | **PMM 3** (Grafana, VictoriaMetrics, ClickHouse), **cAdvisor**, **Dozzle**, **Portainer** | Metrics, alerts, logs, container management |
 | Admin | **phpMyAdmin**, **pgAdmin 4** | Database UIs through the VPN |
@@ -96,7 +94,7 @@ The replicas clone their primary on the first start: allow a minute (the MySQL r
 
 ### One project, many roles
 
-- The root **`compose.yaml`** includes every stack (`gateway/`, `monitoring/`, `databases/`, `sync/`, `apps/`) and declares the shared network. Every folder with a `compose.yaml` is a stack; stacks list their sub-stacks with `include`.
+- The root **`compose.yaml`** includes every stack (`gateway/`, `monitoring/`, `databases/`, `apps/`) and declares the shared network. Every folder with a `compose.yaml` is a stack; stacks list their sub-stacks with `include`.
 - **Every service has its own Compose profile.** `COMPOSE_PROFILES` in `.env` lists the services of *this* server, and `docker compose up -d` starts exactly those. All servers run the same committed files; only `.env` differs.
 - **No service depends on another stack.** Each one waits for what it needs by itself (entrypoint wrappers poll their dependencies), so any subset of profiles works.
 
@@ -117,8 +115,6 @@ See the diagram at the top.
  *-backup-primary        *-backup-replica        full + incremental/differential
  (primary's server)      (replica's server)      + continuous logs, 14 days
     │                        │
-    └────────► sync (rclone) ◄┘ ──► off-site storage (encrypted, never deletes)
-
  every server ──► pmm-client + cAdvisor ──► PMM Server ──► alert rules ──► email / Slack
 ```
 
@@ -149,7 +145,7 @@ See the diagram at the top.
 | 1. Project | **`PROJECT_NAME`**: prefix of containers and volumes. Renaming it orphans existing volumes. |
 | 2. Profiles | **`COMPOSE_PROFILES`**: what this server runs |
 | 3. Network | **`NETWORK_NAME`**, **`NETWORK_SUBNET`** (also routed through the VPN), **`VPN_DNS_IP`** |
-| 4. Services | `TZ` and storage, then one block per service: VPN host, VPN client, HTTP, PMM Server, PMM client, Dozzle, Portainer, MySQL, PostgreSQL, apps, sync |
+| 4. Services | `TZ` and storage, then one block per service: VPN host, VPN client, HTTP, PMM Server, PMM client, Dozzle, Portainer, MySQL, PostgreSQL, apps |
 
 ### 2.2 Values to set for production
 
@@ -160,7 +156,6 @@ See the diagram at the top.
 | PostgreSQL | `POSTGRES_PASSWORD`, `POSTGRES_REPLICATION_PASSWORD`, `POSTGRES_MONITOR_PASSWORD`, `POSTGRES_APP_USER`, `POSTGRES_APP_PASSWORD`, `POSTGRES_DATABASES`, `POSTGRES_ADMIN_EMAIL`, `POSTGRES_ADMIN_PASSWORD` |
 | Monitoring | `PMM_ADMIN_PASSWORD`, `PORTAINER_ADMIN_PASSWORD`, `SMTP_*`, `SLACK_WEBHOOK_URL` |
 | Storage | `*_DATA_VOLUME`, `*_BACKUP_VOLUME` (see [2.4](#24-storage)) |
-| Off-site copies | `SYNC_DESTINATION`, `SYNC_VOLUMES`, `SYNC_DATA_DIR`, `SYNC_ENCRYPT_PASSWORD`, `SYNC_ENCRYPT_SALT` |
 
 Passwords and users are applied when a data volume is **first initialized**: changing them later does not change an existing database. The PMM client uses the same `MYSQL_MONITOR_*` and `POSTGRES_MONITOR_*` accounts the primaries create.
 
@@ -186,7 +181,6 @@ Passwords and users are applied when a data volume is **first initialized**: cha
 | | `postgres-backup-replica` | Backups of the replica (on its server) |
 | | `postgres-admin` | pgAdmin |
 | Apps | `java-service-example`, `angular-app-example`, `nodejs-app-example` | App examples |
-| Sync | `sync` | Copies volumes (the backups) off-site with rclone |
 
 ```bash
 # One server with everything (default), backups of the replicas
@@ -194,11 +188,11 @@ COMPOSE_PROFILES=vpn-host,http,pmm,metrics,logs,portainer,mysql-primary,mysql-re
 
 # Two servers: the primaries...
 COMPOSE_PROFILES=vpn-host,http,pmm,metrics,logs,portainer,mysql-primary,mysql-admin,postgres-primary,postgres-admin
-# ...and the replicas with their backups, copied off-site
-COMPOSE_PROFILES=vpn-client,mysql-replica,mysql-backup-replica,postgres-replica,postgres-backup-replica,sync
+# ...and the replicas with their backups
+COMPOSE_PROFILES=vpn-client,mysql-replica,mysql-backup-replica,postgres-replica,postgres-backup-replica
 
 # Backups on both servers (two independent sets): add to the primaries' list
-...,mysql-backup-primary,postgres-backup-primary,sync
+...,mysql-backup-primary,postgres-backup-primary
 
 # Only MySQL, backups of the primary
 COMPOSE_PROFILES=mysql-primary,mysql-backup-primary
@@ -270,7 +264,7 @@ Only the VPN subnet and the internal network go through the tunnel. After changi
 1. On the VPN host: add a peer, e.g. `VPN_PEERS=admin,replica1`, run `docker compose up -d vpn`, and copy `gateway/vpn/host/config/peer_replica1/peer_replica1.conf` to the new server (it holds that server's private key).
 2. On the replica server (a clone of this repository): save it as `gateway/vpn/client/config/peer.conf`.
 3. `cp .env.example .env` and use a **different subnet**, e.g. `NETWORK_SUBNET=172.31.0.0/16` (the client refuses overlapping routes).
-4. Set the profiles, e.g. `vpn-client,mysql-replica,mysql-backup-replica,postgres-replica,postgres-backup-replica,sync`, and remove `*-replica` / `*-backup-replica` from the VPN host's list.
+4. Set the profiles, e.g. `vpn-client,mysql-replica,mysql-backup-replica,postgres-replica,postgres-backup-replica`, and remove `*-replica` / `*-backup-replica` from the VPN host's list.
 5. Use the **same database passwords and `VPN_DNS_IP`** as the VPN host.
 6. `docker compose up -d`; check `docker compose ps vpn-client` is healthy and the replication state ([section 7](#operations)).
 
@@ -354,20 +348,8 @@ Enable a backup profile on the server where the backup should run. Each side bac
 
   To replace them: delete every file in `certs/` on the primary's server, `docker compose restart postgres-backup-server`, copy again, `docker compose restart postgres-backup-replica`.
 - **Health checks:** unhealthy until the first backup exists, and when the last backup failed, the MySQL binlog stream stopped, or PostgreSQL's last WAL archive attempt failed.
-- **Recreated server** (new data volume): MySQL detects the new `server_uuid`, takes a full backup and keeps the old chains apart. pgBackRest refuses another cluster's repository (stanza-create keeps retrying): copy it off-site if needed, then delete it ([section 7](#operations)).
+- **Recreated server** (new data volume): MySQL detects the new `server_uuid`, takes a full backup and keeps the old chains apart. pgBackRest refuses another cluster's repository (stanza-create keeps retrying): remove the old repository if needed ([section 7](#operations)).
 - Give the backups enough disk: put `*_BACKUP_VOLUME` on a folder of a separate disk.
-
-**Off-site copies (`sync`)** — rclone copies what **`SYNC_VOLUMES`** lists to **`SYNC_DESTINATION`**, once at start and then on **`SYNC_SCHEDULE`** (05:00). Run one per server with backups, each with its own destination folder.
-
-- **Never deletes:** expired files stay on the destination; a changed file's previous version moves to `_versions/<date>/`.
-- **`SYNC_MAX_AGE`** (`90d`) deletes older files from the destination. Keep it well above the retention plus the time between full backups.
-- **`SYNC_ENCRYPT_PASSWORD`** / **`SYNC_ENCRYPT_SALT`** encrypt contents and names. Store them outside these servers: without them nothing can be read back.
-- **What to copy:** volume names or folders (the same values as the storage variables; default `${MYSQL_REPLICA_BACKUP_VOLUME},${POSTGRES_REPLICA_BACKUP_VOLUME}`). Folders must be inside **`SYNC_DATA_DIR`** (their common parent, e.g. `/srv/mydata`).
-- **Set up the remote** once per server (e.g. Google Drive named `gdrive`). Without a browser, answer `n` to "Use web browser to automatically authenticate?". The config is stored in `sync/rclone/` (not committed):
-
-  ```bash
-  docker compose run --rm sync config
-  ```
 
 ### 2.9 Monitoring and alerts
 
@@ -401,7 +383,7 @@ Restart `pmm-server` after changing them, then route alerts in **Alerting → No
 | Network errors | more than 1 errored packet per second on an interface | 15m | warning |
 | Container restarting | more than 2 restarts in 15 minutes | — | warning |
 
-There is no network throughput rule: normal varies too much (backups and syncs use all the bandwidth they get). Each rule has a **`severity`** label for routing; alerts go to the default contact point until a policy says otherwise.
+There is no network throughput rule: normal varies too much (backups use all the bandwidth they get). Each rule has a **`severity`** label for routing; alerts go to the default contact point until a policy says otherwise.
 
 ---
 
@@ -434,7 +416,6 @@ databases/
     replica/                 replica (postgres-replica-db): clone + streaming
     admin/                   pgAdmin
     backup/                  pgBackRest image, postgres-backup.sh, postgres-restore.sh, certs/
-sync/                        rclone image, sync.sh, rclone/ (remote config)
 apps/
   java-service-example/      Java export + Linux JRE (source/, jre.tar.gz)
   angular-app-example/       Angular SSR build run by Node.js (source/)
@@ -615,18 +596,15 @@ docker compose exec mysql-backup-replica ls /backups/chains/*
 
 ### 5.3 Recover after losing a server
 
-Bring the off-site copy back into a volume, then restore from it:
+Bring a backup copy back into a volume, then restore from it:
 
 ```bash
-docker compose run --rm -v pg-offsite:/restore sync restore postgres-replica-backup
-REPO_VOLUME=pg-offsite bash databases/postgres/backup/postgres-restore.sh
+REPO_VOLUME=pg-recovered bash databases/postgres/backup/postgres-restore.sh
 
-docker compose run --rm -v mysql-offsite:/restore sync restore mysql-replica-backup
-BACKUP_VOLUME=mysql-offsite bash databases/mysql/backup/mysql-restore.sh
+BACKUP_VOLUME=mysql-recovered bash databases/mysql/backup/mysql-restore.sh
 ```
 
 ```text
-[sync] restoring gdrive:backups/server-a/postgres-replica-backup into /restore
 [postgres-restore]   INFO: repo1: restore backup set 20261015-110000F_20261015-110600D, recovery will start at 2026-10-15 11:06:00
 [postgres-restore]   LOG:  archive recovery complete
 ```
@@ -688,8 +666,6 @@ docker compose up -d postgres-db
 
 On the replica's server: `postgres-backup-replica`, `postgres-replica-db` and `<PROJECT_NAME>_postgres-replica-backup`.
 
-**Copy off-site now**: `docker compose run --rm sync run`.
-
 **Docker log rotation** (`/etc/docker/daemon.json`):
 
 ```json
@@ -706,6 +682,5 @@ On the replica's server: `postgres-backup-replica`, `postgres-replica-db` and `<
 - [ ] `COMPOSE_PROFILES` set to this server's roles; replication checked
 - [ ] Storage chosen for every service (`*_DATA_VOLUME`, `*_BACKUP_VOLUME`), folders created with their owners, enough disk for backups
 - [ ] Backup profiles on the chosen side(s), backup containers healthy, a test restore done (PostgreSQL replica side: `ca.crt`, `client.crt`, `client.key` copied)
-- [ ] `sync` running on every server with backups, `SYNC_ENCRYPT_PASSWORD` set and stored safely, a restore from the off-site copy tested
 - [ ] PMM contact points and notification policies configured and tested
 - [ ] Apps: exports in `source/` (and JREs in `jre.tar.gz`), app variables in `.env`, apps running

@@ -21,7 +21,7 @@
 #                - The backups on this server: the volume or folder of
 #                  mysql-backup-primary or mysql-backup-replica
 #                  (MYSQL_PRIMARY_BACKUP_VOLUME / MYSQL_REPLICA_BACKUP_VOLUME in .env), or a
-#                  copy brought back with the sync service
+#                  copy brought back from another storage location
 #                - MYSQL_ROOT_PASSWORD in the environment, or in the root
 #                  .env (the backup keeps the server's root password)
 #
@@ -37,7 +37,8 @@
 #   TARGET_TIME          (arg) stop replaying before this UTC time.
 #                        Default: empty (replay everything)
 #   BACKUP_VOLUME        (env) backup volume or folder to restore from,
-#                        overrides SOURCE (e.g. a copy restored from off-site)
+#                        overrides SOURCE (e.g. a copy restored from another
+#                        storage location)
 #   RESTORE_NAME         (env) name of the temporary container and volume.
 #                        Default: mysql-restore
 #   PROJECT_NAME, MYSQL_ROOT_PASSWORD, MYSQL_PRIMARY_BACKUP_VOLUME,

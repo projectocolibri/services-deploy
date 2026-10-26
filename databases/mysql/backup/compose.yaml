@@ -143,7 +143,6 @@ volumes:
   # Servers' data volumes, declared in ../master and ../replica.
   mysql-data:
   mysql-replica-data:
-  # Backups and binary logs. Copy them off-site with the sync service
-  # (SYNC_VOLUMES). Deleting one deletes its backups.
+  # Backups and binary logs. Deleting one deletes its backups.
   mysql-primary-backup:
   mysql-replica-backup:

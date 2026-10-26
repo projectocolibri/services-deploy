@@ -19,7 +19,8 @@
 #                - The repository on this server: the volume or folder of
 #                  postgres-backup-primary or postgres-backup-replica
 #                  (POSTGRES_PRIMARY_BACKUP_VOLUME / POSTGRES_REPLICA_BACKUP_VOLUME in
-#                  .env), or a copy brought back with the sync service
+#                  .env), or a copy brought back from another storage
+#                  location
 #
 # Usage:
 #   databases/postgres/backup/postgres-restore.sh [primary|replica] ["YYYY-MM-DD HH:MM:SS"]
@@ -34,7 +35,8 @@
 #   TARGET_TIME       (arg) recover up to this UTC time. Default: empty
 #                     (recover everything archived)
 #   REPO_VOLUME       (env) repository volume or folder to restore from,
-#                     overrides SOURCE (e.g. a copy restored from off-site)
+#                     overrides SOURCE (e.g. a copy restored from another
+#                     storage location)
 #   RESTORE_NAME      (env) name of the temporary container and volume.
 #                     Default: postgres-restore
 #   PROJECT_NAME, POSTGRES_USER, POSTGRES_PRIMARY_BACKUP_VOLUME,
