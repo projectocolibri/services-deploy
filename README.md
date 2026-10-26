@@ -313,8 +313,8 @@ Only private networks (LAN, VPN, Docker) are allowed on internal sites.
 | | MySQL | PostgreSQL |
 |---|---|---|
 | Databases | **`MYSQL_DATABASES`** (empty: none) | **`POSTGRES_DATABASES`** (empty: none) |
-| Owner / grants | all privileges to `MYSQL_USER` | owned by `POSTGRES_APP_USER`, created if missing |
-| Names | lowercase, digits, `_`; `app%` is a grant-only pattern | lowercase, digits, `_` |
+| Owner / grants | all privileges to `MYSQL_USER` on configured databases only | `POSTGRES_APP_USER` can create databases and gets access to all current databases |
+| Names | lowercase, digits, `_`; `%` patterns grant matching databases (`%` = all) | lowercase, digits, `_` |
 
 Fixed at initialization (a new volume is needed to change them): MySQL **`--lower-case-table-names=1`** (must match on both servers), PostgreSQL **`--encoding=UTF8 --locale=C.UTF-8`**.
 

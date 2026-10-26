@@ -11,10 +11,11 @@
 #                  follows the old primary again.
 #                - Page tracking: installs component_mysqlbackup, used by
 #                  incremental backups.
+#                - Application access: grants MYSQL_USER all privileges on
+#                  every database, without global server privileges.
 #                - Databases: creates each database in DATABASES that does not
-#                  exist yet and grants MYSQL_USER all privileges on it.
-#                  Existing databases and their data are left untouched. The
-#                  replica gets them through replication.
+#                  exist yet. Existing databases and their data are left
+#                  untouched. The replica gets them through replication.
 # Prerequisites: - Percona Server image (provides /docker-entrypoint.sh, mysql
 #                  and mysqladmin)
 #                - MYSQL_ROOT_PASSWORD set in the container environment
@@ -23,7 +24,7 @@
 #   server_id            (local) MySQL server ID of the primary. Must differ
 #                        from the replica's. Fixed value: 1
 #   MYSQL_ROOT_PASSWORD  (env) root password used for local admin queries
-#   MYSQL_USER           (env) application user granted access to DATABASES
+#   MYSQL_USER           (env) application user granted database access
 #   DATABASES            (env) comma-separated database names to create
 #   MYSQL_PWD            (env, per command) password read by the mysql client,
 #                        keeps it off the command line
@@ -71,13 +72,20 @@ page_tracking() {
 # ----------------------------------------------------------------------------
 # Application databases
 # ----------------------------------------------------------------------------
-# Creates every database in DATABASES that does not exist yet and grants
-# MYSQL_USER all privileges on it. A name with % is a pattern (app% = every
-# database starting with app): nothing is created, MYSQL_USER is only granted
-# all privileges on the matching databases, including creating them. Safe to
-# run on every start.
+# Creates every database in DATABASES that does not exist yet. MYSQL_USER gets
+# database-level privileges on every database, including databases created
+# later, without receiving global server privileges. Safe on every start.
 create_databases() {
     local db dbs
+
+    # Remove any global grant from earlier versions, then grant all privileges
+    # at the database level for every database name.
+    if [ -n "${MYSQL_USER}" ]; then
+        query "REVOKE ALL PRIVILEGES, GRANT OPTION ON *.* FROM '${MYSQL_USER}'@'%';" || return 1
+        query "GRANT ALL PRIVILEGES ON \`%\`.* TO '${MYSQL_USER}'@'%';" || return 1
+        echo "[primary] all database privileges granted: ${MYSQL_USER}"
+    fi
+
     IFS=',' read -ra dbs <<< "${DATABASES}"
     for db in "${dbs[@]}"; do
         # Ignore spaces around names and empty entries.
@@ -91,20 +99,13 @@ create_databases() {
             continue
         fi
 
-        # Pattern: grant only, with its wildcards as written.
+        # A pattern is grant-only; the wildcard database grant above already
+        # covers it.
         if [[ "${db}" == *%* ]]; then
-            if [ -n "${MYSQL_USER}" ]; then
-                query "GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${MYSQL_USER}'@'%';" || continue
-                echo "[primary] databases granted: ${db}"
-            fi
             continue
         fi
 
         query "CREATE DATABASE IF NOT EXISTS \`${db}\`;" || continue
-        # In GRANT, _ is a wildcard: \_ matches only this database.
-        if [ -n "${MYSQL_USER}" ]; then
-            query "GRANT ALL PRIVILEGES ON \`${db//_/\\_}\`.* TO '${MYSQL_USER}'@'%';" || continue
-        fi
         echo "[primary] database ready: ${db}"
     done
 }

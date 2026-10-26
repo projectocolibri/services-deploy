@@ -8,11 +8,14 @@
 #                  replica (the replica's volume was attached to the primary
 #                  service), removing standby.signal makes PostgreSQL end
 #                  recovery and start accepting writes.
+#                - Application access: grants APP_USER database and
+#                  public-schema access to every database. APP_USER can create
+#                  databases and owns databases it creates.
 #                - Databases: once the server is up, in the background, on
-#                  every start, creates APP_USER and each database in
-#                  DATABASES that does not exist yet, owned by APP_USER.
-#                  Existing roles, databases and their data are left
-#                  untouched. The replica gets them through replication.
+#                  every start, creates each database in DATABASES that does
+#                  not exist yet, owned by APP_USER. Existing roles, databases
+#                  and their data are left untouched. The replica gets them
+#                  through replication.
 # Prerequisites: - Percona Distribution for PostgreSQL image (provides
 #                  /entrypoint.sh, psql and pg_isready, and sets PGDATA)
 #                - init: true in compose.yaml, so the background task is
@@ -22,8 +25,8 @@
 #   PGDATA             (env, set by the image) data directory, /data/db
 #   POSTGRES_USER      (env) superuser used to create roles and databases
 #   POSTGRES_PASSWORD  (env) password of POSTGRES_USER
-#   APP_USER           (env) application role that owns DATABASES. Empty: the
-#                      databases are owned by POSTGRES_USER
+#   APP_USER           (env) application role with database access. Empty:
+#                      database access setup is skipped
 #   APP_PASSWORD       (env) password of APP_USER
 #   DATABASES          (env) comma-separated database names to create
 #   PGPASSWORD         (env, per command) password read by psql and pg_isready
@@ -64,8 +67,8 @@ admin_psql() {
 # ----------------------------------------------------------------------------
 # Application role and databases
 # ----------------------------------------------------------------------------
-# Creates APP_USER and every database in DATABASES that does not exist yet.
-# Safe to run on every start.
+# Creates APP_USER, grants it access to every current database, and creates
+# every database in DATABASES that does not exist yet. Safe on every start.
 create_databases() {
     local db dbs owner
 
@@ -86,6 +89,9 @@ create_databases() {
         admin_psql --set user="${APP_USER}" --set password="${APP_PASSWORD}" <<'EOSQL'
 SELECT format('CREATE ROLE %I WITH LOGIN PASSWORD %L', :'user', :'password')
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'user') \gexec
+EOSQL
+        admin_psql --set user="${APP_USER}" <<'EOSQL'
+SELECT format('ALTER ROLE %I CREATEDB', :'user') \gexec
 EOSQL
     fi
     owner="${APP_USER:-${POSTGRES_USER}}"
@@ -108,6 +114,31 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'db') \gexec
 EOSQL
         echo "[primary] database ready: ${db}"
     done
+
+    # PostgreSQL has no wildcard database grant. Apply the equivalent to each
+    # current database; databases created by APP_USER are owned by that role.
+    if [ -n "${APP_USER}" ]; then
+        while IFS= read -r db; do
+            [ -n "${db}" ] || continue
+            admin_psql --set db="${db}" --set user="${APP_USER}" <<'EOSQL'
+SELECT format('GRANT ALL PRIVILEGES ON DATABASE %I TO %I', :'db', :'user') \gexec
+EOSQL
+            if [ "$(PGPASSWORD="${POSTGRES_PASSWORD}" psql -h 127.0.0.1 \
+                -U "${POSTGRES_USER}" -d "${db}" -tAc \
+                "SELECT EXISTS (SELECT FROM pg_namespace WHERE nspname = 'public')" |
+                tr -d '[:space:]')" = "t" ]; then
+                PGPASSWORD="${POSTGRES_PASSWORD}" psql -h 127.0.0.1 \
+                    -U "${POSTGRES_USER}" -d "${db}" -v ON_ERROR_STOP=1 -q \
+                    --set user="${APP_USER}" <<'EOSQL'
+GRANT ALL PRIVILEGES ON SCHEMA public TO :"user";
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO :"user";
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO :"user";
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO :"user";
+EOSQL
+            fi
+        done < <(admin_psql -tAc "SELECT datname FROM pg_database WHERE datallowconn ORDER BY datname")
+        echo "[primary] all database privileges granted: ${APP_USER}"
+    fi
 }
 
 # Detached (double fork) so tini, not the postmaster, reaps it. Never fails the

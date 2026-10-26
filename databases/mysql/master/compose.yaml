@@ -47,8 +47,9 @@ services:
       MONITOR_USER: ${MYSQL_MONITOR_USER}
       # MONITOR_PASSWORD: password of MONITOR_USER.
       MONITOR_PASSWORD: ${MYSQL_MONITOR_PASSWORD}
-      # DATABASES: databases created on every start if missing, with all
-      # privileges for MYSQL_USER (mysql-master-entrypoint.sh).
+      # DATABASES: databases created on every start if missing. MYSQL_USER gets
+      # privileges only on these databases and any configured patterns
+      # (mysql-master-entrypoint.sh).
       DATABASES: ${MYSQL_DATABASES}
 
     # --------------------------------------------------------------------------

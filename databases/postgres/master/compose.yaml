@@ -61,8 +61,9 @@ services:
       MONITOR_USER: ${POSTGRES_MONITOR_USER}
       # MONITOR_PASSWORD: password of MONITOR_USER.
       MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD}
-      # APP_USER: application role created on every start if missing, owner
-      # of DATABASES (postgres-master-entrypoint.sh).
+      # APP_USER: application role created on every start if missing, granted
+      # access to every database and allowed to create databases
+      # (postgres-master-entrypoint.sh).
       APP_USER: ${POSTGRES_APP_USER}
       # APP_PASSWORD: password of APP_USER.
       APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
