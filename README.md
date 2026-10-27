@@ -1,6 +1,6 @@
 <!-- Banner: add docs/banner.png and replace this comment with ![Services deploy](docs/banner.png) -->
 
-# Services deploy
+
 
 **Self-hosted MySQL and PostgreSQL with replicas, point-in-time backups, VPN, HTTPS gateway and monitoring — one repository, one `.env`, one `docker compose up -d`.**
 
