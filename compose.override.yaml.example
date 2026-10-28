@@ -8,7 +8,7 @@
 #                service names, environment, and profiles. This file is not
 #                loaded automatically while it has the .example suffix.
 # Prerequisites: Application source in apps/<service>/source/. The Java
-#                example also needs apps/java-service-example/jre.tar.gz.
+#                example also needs apps/.example/java-service-example/jre.tar.gz.
 # Variables:     Application settings are defined here so the infrastructure
 #                .env remains independent from application deployments.
 # ============================================================================
@@ -19,7 +19,7 @@ services:
   # --------------------------------------------------------------------------
   java-service-example:
     build:
-      context: ./apps/java-service-example
+      context: ./apps/.example/java-service-example
     restart: always
     profiles: [java-service-example]
     init: true
@@ -41,7 +41,7 @@ services:
   # --------------------------------------------------------------------------
   angular-app-example:
     build:
-      context: ./apps/angular-app-example
+      context: ./apps/.example/angular-app-example
     restart: always
     profiles: [angular-app-example]
     init: true
@@ -59,7 +59,7 @@ services:
   # --------------------------------------------------------------------------
   nodejs-app-example:
     build:
-      context: ./apps/nodejs-app-example
+      context: ./apps/.example/nodejs-app-example
     restart: always
     profiles: [nodejs-app-example]
     init: true

@@ -9,6 +9,11 @@ $versionFile = Join-Path $root ".version"
 
 Set-Location $root
 
+& git rev-parse --is-inside-work-tree *> $null
+if ($LASTEXITCODE -ne 0) {
+    throw "This deployment directory is not a Git clone. Clone the repository with 'git clone' instead of downloading a ZIP, then run this script again."
+}
+
 function Invoke-Git {
     param([string[]]$Arguments)
     & git @Arguments

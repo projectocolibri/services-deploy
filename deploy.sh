@@ -11,6 +11,11 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 version_file="${root}/.version"
 cd "${root}"
 
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "This deployment directory is not a Git clone. Clone the repository with 'git clone' instead of downloading a ZIP, then run this script again." >&2
+    exit 1
+fi
+
 git fetch origin --tags --prune
 
 latest="$(

@@ -72,13 +72,16 @@ compose.override.yml
 !compose.override.yaml.example
 
 # ----------------------------------------------------------------------------
-# Application source and local JRE archives
+# Application examples and local deployment applications
 # ----------------------------------------------------------------------------
-# Application exports, package sources, and Java runtimes are supplied by each
-# deployment and are not part of the infrastructure repository.
-apps/*/source/*
-!apps/*/source/.gitkeep
-apps/*/*.tar.gz
+# Only the sanitized examples under apps/.example are versioned. Every other
+# application directory is supplied by each deployment and remains local.
+apps/*
+!apps/.example/
+!apps/.example/**
+apps/.example/*/source/*
+!apps/.example/*/source/.gitkeep
+apps/.example/*/*.tar.gz
 
 # ----------------------------------------------------------------------------
 # Operating system and editor files

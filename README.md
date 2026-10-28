@@ -77,6 +77,24 @@ Deployments can follow immutable Git tags while keeping `apps/`, `.env`, the
 Compose override, and active nginx configuration local to the deployment.
 The scripts use the latest `vMAJOR.MINOR.PATCH` tag and never run `git clean`.
 
+The deployment directory must be a Git clone. Do not use GitHub's
+**Code > Download ZIP** option for this workflow because a ZIP does not
+include the `.git` metadata required to fetch tags and switch versions.
+
+Clone the repository instead:
+
+```powershell
+git clone https://github.com/projectocolibri/services-deploy.git
+cd services-deploy
+```
+
+For a private repository, authenticate GitHub before cloning. SSH is usually
+the best option for servers:
+
+```powershell
+git clone git@github.com:projectocolibri/services-deploy.git
+```
+
 ```text
 .version       local deployed tag, ignored by Git
 deploy.ps1     Windows deployment commands
@@ -515,9 +533,11 @@ The repository includes generic application packaging examples under
 
 ```text
 apps/
-├── java-service-example/      # Linux export + jre.tar.gz
-├── angular-app-example/       # Angular SSR export
-└── nodejs-app-example/        # package.json + package-lock.json + app
+├── .example/                  # the only versioned application directory
+│   ├── java-service-example/  # Linux export + jre.tar.gz
+│   ├── angular-app-example/   # Angular SSR export
+│   └── nodejs-app-example/    # package.json + package-lock.json + app
+└── <your-app>/                # local/private, ignored by Git
 ```
 
 Copy the override template and add the application profiles to the local
@@ -532,6 +552,8 @@ COMPOSE_PROFILES=...,java-service-example,angular-app-example,nodejs-app-example
 ```
 
 The override is intentionally an example and is not loaded automatically.
+Only `apps/.example/` is kept in Git. Add real applications directly under
+`apps/`; those directories are ignored and are preserved on each deployment.
 Keep real application source, `jre.tar.gz`, application environment variables,
 and active nginx routes in the deployment's private files. The Java example
 expects an exported launcher named `services`; change the `CMD` in its
