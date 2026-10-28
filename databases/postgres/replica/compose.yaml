@@ -11,7 +11,7 @@
 #                postgres-backup-replica has created its pgBackRest stanza
 #                there.
 # Prerequisites: - The primary reachable at PRIMARY_HOST with the replication
-#                  role and pg_hba rule created (init-master.sh)
+#                  role and pg_hba rule created (init.sh)
 #                - An empty volume for the first clone
 # Variables:     POSTGRES_REPLICA_PRIMARY_HOST, POSTGRES_REPLICATION_USER,
 #                POSTGRES_REPLICATION_PASSWORD.
@@ -57,7 +57,7 @@ services:
     # Startup
     # --------------------------------------------------------------------------
     # Wrapper around the image entrypoint: clones the primary on first start.
-    entrypoint: ["/bin/bash", "/usr/local/bin/postgres-replica-entrypoint.sh"]
+    entrypoint: ["/bin/bash", "/usr/local/bin/entrypoint.sh"]
     # Server settings (-c name=value):
     #   hot_standby=on             accept read-only queries during recovery
     #   wal_keep_size=1GB          same as the primary, so this server can be
@@ -111,7 +111,7 @@ services:
       # archive_command.
       - ${POSTGRES_REPLICA_BACKUP_VOLUME:-postgres-replica-backup}:/var/lib/pgbackrest
       # Custom entrypoint wrapper.
-      - ./postgres-replica-entrypoint.sh:/usr/local/bin/postgres-replica-entrypoint.sh:ro
+      - ./entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
 
     # --------------------------------------------------------------------------
     # Health check

@@ -8,7 +8,7 @@
 #                Reachable as mysql-replica. Not a backup: it runs on the same
 #                server and replays every change within seconds.
 # Prerequisites: - The primary reachable at PRIMARY_HOST with the replication
-#                  account created (init-master.sh)
+#                  account created (init.sh)
 #                - Same root password as the primary
 #                - An empty volume for the first clone
 # Variables:     MYSQL_ROOT_PASSWORD, MYSQL_REPLICA_PRIMARY_HOST,
@@ -51,7 +51,7 @@ services:
     # --------------------------------------------------------------------------
     # Wrapper around the image entrypoint: clones the primary, configures
     # replication and enables super_read_only.
-    entrypoint: ["/bin/bash", "/usr/local/bin/mysql-replica-entrypoint.sh"]
+    entrypoint: ["/bin/bash", "/usr/local/bin/entrypoint.sh"]
     # mysqld options:
     #   --log-bin, --gtid-mode, ... same as the primary, so this server can be
     #                               promoted to primary
@@ -97,7 +97,7 @@ services:
       # Replica's own data directory. Delete it to force a fresh clone.
       - ${MYSQL_REPLICA_DATA_VOLUME:-mysql-replica-data}:/var/lib/mysql
       # Custom entrypoint wrapper.
-      - ./mysql-replica-entrypoint.sh:/usr/local/bin/mysql-replica-entrypoint.sh:ro
+      - ./entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
 
     # --------------------------------------------------------------------------
     # Health check

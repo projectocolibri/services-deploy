@@ -274,13 +274,13 @@ TLS ends at nginx; every service behind it serves plain HTTP on its **`*_PORT`**
 
 **Public app**
 
-1. Copy `gateway/http/conf.d/app.conf.example` to `<app>.conf`; set the domain and `proxy_pass http://<service>:<port>`.
+1. Copy `gateway/http/conf.d/sites.conf.example` to `sites.conf`, remove `default.conf`, and configure the public app section with the domain and `proxy_pass http://<service>:<port>`. This gives the deployment one nginx configuration file.
 2. Put the certificate in `gateway/http/certs/<domain>/fullchain.pem` and `privkey.pem`.
 3. Reload: `docker compose exec http nginx -s reload`.
 
 **Internal sites** (e.g. `https://pmm.monitor.example.lan`)
 
-1. Copy `gateway/http/conf.d/internal.conf.example` to `<name>.conf` and replace `example.lan`. Its map lists one host name per service on port 8080; update a line if you changed that service's `*_PORT` (nginx does not read `.env`).
+1. Use the internal sites section in `gateway/http/conf.d/sites.conf`; replace `example.lan`. Its map lists one host name per service on port 8080; update a line if you changed that service's `*_PORT` (nginx does not read `.env`).
 2. Issue a certificate from the internal CA (created on the first run):
 
    ```bash
@@ -408,12 +408,12 @@ databases/
     master/                  primary (mysql-db): entrypoint, init script
     replica/                 replica (mysql-replica-db): clone + replication
     admin/                   phpMyAdmin
-    backup/                  XtraBackup image, mysql-backup.sh, mysql-restore.sh
+    backup/                  XtraBackup image, backup.sh, restore.sh
   postgres/
     master/                  primary (postgres-db): entrypoint, init script
     replica/                 replica (postgres-replica-db): clone + streaming
     admin/                   pgAdmin
-    backup/                  pgBackRest image, postgres-backup.sh, postgres-restore.sh, certs/
+    backup/                  pgBackRest image, backup.sh, restore.sh, certs/
 ```
 
 ### 3.2 Repository conventions
@@ -475,6 +475,31 @@ docker compose config --quiet
 docker compose up -d --build
 ```
 
+### 3.5 Configuration ownership
+
+Reusable infrastructure configuration is committed and updated with the
+repository. Deployment-owned active configuration and generated state are
+ignored so an infrastructure update cannot replace server-specific settings.
+
+| Category | Examples | Git status |
+|---|---|---|
+| Compose definitions | `compose.yaml` files | Tracked |
+| Reusable service configuration | PMM rules/dashboards, custom queries, VPN templates | Tracked |
+| Configuration templates | `*.example` files | Tracked |
+| Active nginx sites | `gateway/http/conf.d/*.conf` | Ignored |
+| Environment and secrets | `.env`, certificates, database backup data | Ignored |
+| Generated VPN state | keys, peer configs, QR codes, `wg0.conf` | Ignored |
+
+For nginx, copy the committed template once and customize the local file:
+
+```bash
+cp gateway/http/conf.d/sites.conf.example gateway/http/conf.d/sites.conf
+```
+
+The active `sites.conf` is ignored, while `sites.conf.example` can continue
+to receive improvements from infrastructure updates. If a deployment only
+needs the catch-all behavior, copy `default.conf.example` to `default.conf`.
+
 ---
 
 <a id="testing"></a>
@@ -509,7 +534,7 @@ COMPOSE_PROFILES=mysql-primary,mysql-replica,mysql-backup-replica,postgres-prima
 EOF
 docker compose --env-file .env.example --env-file /tmp/test.env up -d --build
 docker compose -p bkptest ps                   # backup containers turn healthy after their first backup
-PROJECT_NAME=bkptest bash databases/postgres/backup/postgres-restore.sh replica
+PROJECT_NAME=bkptest bash databases/postgres/backup/restore.sh replica
 docker compose --env-file .env.example --env-file /tmp/test.env --profile '*' down -v --rmi local
 ```
 
@@ -532,7 +557,7 @@ docker compose logs pmm-server | grep 'alert rule'
 A table was emptied at 11:04:20 UTC. Restore to just before it, into a temporary server:
 
 ```bash
-bash databases/mysql/backup/mysql-restore.sh replica "2026-10-15 11:04:18"
+bash databases/mysql/backup/restore.sh replica "2026-10-15 11:04:18"
 ```
 
 ```text
@@ -553,7 +578,7 @@ docker rm -f mysql-restore; docker volume rm mysql-restore
 The PostgreSQL equivalent picks the right full + differential backup and stops before the bad transaction:
 
 ```bash
-bash databases/postgres/backup/postgres-restore.sh replica "2026-10-15 10:51:34"
+bash databases/postgres/backup/restore.sh replica "2026-10-15 10:51:34"
 ```
 
 ```text
@@ -597,9 +622,9 @@ docker compose exec mysql-backup-replica ls /backups/chains/*
 Bring a backup copy back into a volume, then restore from it:
 
 ```bash
-REPO_VOLUME=pg-recovered bash databases/postgres/backup/postgres-restore.sh
+REPO_VOLUME=pg-recovered bash databases/postgres/backup/restore.sh
 
-BACKUP_VOLUME=mysql-recovered bash databases/mysql/backup/mysql-restore.sh
+BACKUP_VOLUME=mysql-recovered bash databases/mysql/backup/restore.sh
 ```
 
 ```text

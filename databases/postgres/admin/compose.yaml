@@ -8,7 +8,7 @@
 #                ports). The server list is rebuilt from POSTGRES_ADMIN_HOSTS
 #                on every start.
 # Prerequisites: - VPN connection
-#                - pgadmin-entrypoint.sh next to this file
+#                - entrypoint.sh next to this file
 # Variables:     POSTGRES_ADMIN_EMAIL, POSTGRES_ADMIN_PASSWORD,
 #                POSTGRES_ADMIN_HOSTS, POSTGRES_ADMIN_HOSTS_LABELS,
 #                POSTGRES_ADMIN_HOSTS_USER.
@@ -57,7 +57,7 @@ services:
     # Startup
     # --------------------------------------------------------------------------
     # Builds servers.json from POSTGRES_ADMIN_HOSTS, then runs the image entrypoint.
-    entrypoint: ["/bin/sh", "/usr/local/bin/pgadmin-entrypoint.sh"]
+    entrypoint: ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
 
     # --------------------------------------------------------------------------
     # Storage and scripts
@@ -66,7 +66,7 @@ services:
       # pgAdmin's settings database (users, preferences, saved passwords).
       - ${POSTGRES_ADMIN_DATA_VOLUME:-pgadmin-data}:/var/lib/pgadmin
       # Custom entrypoint wrapper.
-      - ./pgadmin-entrypoint.sh:/usr/local/bin/pgadmin-entrypoint.sh:ro
+      - ./entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
 
 # ----------------------------------------------------------------------------
 # Volumes

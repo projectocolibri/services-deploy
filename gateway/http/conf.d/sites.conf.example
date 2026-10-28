@@ -1,0 +1,117 @@
+# ============================================================================
+# nginx sites configuration example
+#
+# Purpose:       Single template for the default catch-all, one public app,
+#                and internal infrastructure sites.
+# Role:          Copy to sites.conf, remove default.conf, replace the example
+#                values, and reload nginx. Only *.conf files are loaded.
+# Prerequisites: Certificates and upstream containers must exist. Remove the
+#                public or internal section when it is not used.
+# Variables:     nginx does not read .env; keep ports and host names here.
+# ============================================================================
+
+server_tokens off;
+
+# ----------------------------------------------------------------------------
+# Default servers: refuse unknown HTTP hosts and TLS handshakes.
+# ----------------------------------------------------------------------------
+server {
+    listen 80 default_server;
+    server_name _;
+    return 444;
+}
+
+server {
+    listen 443 ssl default_server;
+    server_name _;
+    ssl_reject_handshake on;
+}
+
+# ----------------------------------------------------------------------------
+# Public application
+# Replace app.example.com, app, and 8080.
+# Certificate: /etc/nginx/certs/app.example.com/
+# ----------------------------------------------------------------------------
+server {
+    listen 80;
+    server_name app.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name app.example.com;
+
+    ssl_certificate     /etc/nginx/certs/app.example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/app.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    client_max_body_size 10m;
+
+    location / {
+        proxy_pass http://app:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+    }
+}
+
+# ----------------------------------------------------------------------------
+# Internal infrastructure sites.
+# Replace example.lan and the certificate path. Add application hosts to the
+# map and server_name when the deployment adds them.
+# ----------------------------------------------------------------------------
+map $host $internal_upstream {
+    default                                 "";
+    admin.mysql.example.lan                 http://mysql-admin:8080;
+    admin.postgres.example.lan              http://postgres-admin:8080;
+    pmm.monitor.example.lan                 http://pmm-server:8080;
+    logs.monitor.example.lan                http://dozzle:8080;
+    portainer.monitor.example.lan           http://portainer:8080;
+}
+
+server {
+    listen 80;
+    server_name *.mysql.example.lan
+                *.postgres.example.lan *.monitor.example.lan;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name *.mysql.example.lan
+                *.postgres.example.lan *.monitor.example.lan;
+
+    ssl_certificate     /etc/nginx/certs/example.lan/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/example.lan/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    allow 10.0.0.0/8;
+    allow 172.16.0.0/12;
+    allow 192.168.0.0/16;
+    deny  all;
+    client_max_body_size 64m;
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    location / {
+        if ($internal_upstream = "") {
+            return 444;
+        }
+        proxy_pass $internal_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+    }
+}

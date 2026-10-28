@@ -62,7 +62,7 @@ services:
     # --------------------------------------------------------------------------
     # Builds the tunnel config from peer.conf, checks for route conflicts and
     # brings the interface up; takes it down on stop.
-    entrypoint: ["/bin/bash", "/usr/local/bin/vpn-client-entrypoint.sh"]
+    entrypoint: ["/bin/bash", "/usr/local/bin/entrypoint.sh"]
 
     # --------------------------------------------------------------------------
     # Configuration and scripts
@@ -72,7 +72,7 @@ services:
       # committed).
       - ./config:/config:ro
       # Entrypoint script.
-      - ./vpn-client-entrypoint.sh:/usr/local/bin/vpn-client-entrypoint.sh:ro
+      - ./entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
 
     # --------------------------------------------------------------------------
     # Health check
@@ -80,7 +80,7 @@ services:
     # Healthy while the last handshake with the VPN host is under 3 minutes
     # old (handshakes renew every 2 minutes on an active tunnel).
     healthcheck:
-      test: ["CMD", "/bin/bash", "/usr/local/bin/vpn-client-entrypoint.sh", "health"]
+      test: ["CMD", "/bin/bash", "/usr/local/bin/entrypoint.sh", "health"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -23,7 +23,7 @@
 #                  location
 #
 # Usage:
-#   databases/postgres/backup/postgres-restore.sh [primary|replica] ["YYYY-MM-DD HH:MM:SS"]
+#   databases/postgres/backup/restore.sh [primary|replica] ["YYYY-MM-DD HH:MM:SS"]
 #   docker exec -it postgres-restore psql -U postgres              # inspect
 #   docker exec postgres-restore pg_dump -U postgres -t table db > table.sql
 #   docker rm -f postgres-restore && docker volume rm postgres-restore

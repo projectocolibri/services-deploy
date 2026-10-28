@@ -10,7 +10,7 @@
 #                volume.
 #                  1. prepares into a new Docker volume the newest chain whose
 #                     full backup finished before TARGET_TIME, with its
-#                     incrementals finished before it (mysql-backup.sh
+#                     incrementals finished before it (backup.sh
 #                     prepare)
 #                  2. starts the temporary server RESTORE_NAME on it, with
 #                     replication disabled
@@ -26,7 +26,7 @@
 #                  .env (the backup keeps the server's root password)
 #
 # Usage:
-#   databases/mysql/backup/mysql-restore.sh [primary|replica] ["YYYY-MM-DD HH:MM:SS"]
+#   databases/mysql/backup/restore.sh [primary|replica] ["YYYY-MM-DD HH:MM:SS"]
 #   docker exec -it mysql-restore mysql -uroot -p          # inspect
 #   docker exec mysql-restore mysqldump -uroot -p db table > table.sql
 #   docker rm -f mysql-restore && docker volume rm mysql-restore   # clean up
@@ -73,7 +73,7 @@ root_dir="$(cd "${script_dir}/../../.." && pwd)"
 name="${RESTORE_NAME:-mysql-restore}"
 
 # Git Bash: docker needs the Windows form of the script's path.
-script="${script_dir}/mysql-backup.sh"
+script="${script_dir}/backup.sh"
 command -v cygpath >/dev/null 2>&1 && script="$(cygpath -w "${script}")"
 
 # setting KEY FILE...: value of KEY from the environment, else from the first
@@ -151,8 +151,8 @@ fi
 docker volume create "${name}" >/dev/null
 log "preparing from ${volume}${target_time:+ for ${target_time} UTC} into volume ${name}"
 result="$(docker run --rm --user root -v "${volume}:/backups:ro" -v "${name}:/restore" \
-    -v "${script}:/usr/local/bin/mysql-backup.sh:ro" --entrypoint /bin/bash \
-    percona/percona-xtrabackup:8.4 /usr/local/bin/mysql-backup.sh prepare "${target_time}")" \
+    -v "${script}:/usr/local/bin/backup.sh:ro" --entrypoint /bin/bash \
+    percona/percona-xtrabackup:8.4 /usr/local/bin/backup.sh prepare "${target_time}")" \
     || { echo "${result}"; log "prepare FAILED"; exit 1; }
 echo "${result}" | grep -v '^RESTORE '
 read -r _ uuid binlog_file <<< "$(echo "${result}" | grep '^RESTORE ')"

@@ -6,7 +6,7 @@
 #                instance with the clone plugin on its first start and then
 #                follows its binary log. Reachable as mysql-primary.
 # Prerequisites: - Credentials from .env
-#                - mysql-master-entrypoint.sh and init-master.sh next to this
+#                - entrypoint.sh and init.sh next to this
 #                  file
 # Variables:     MYSQL_ROOT_PASSWORD, MYSQL_USER, MYSQL_USER_PASSWORD,
 #                MYSQL_REPLICATION_USER, MYSQL_REPLICATION_PASSWORD,
@@ -28,7 +28,7 @@ services:
     # --------------------------------------------------------------------------
     # Credentials
     # --------------------------------------------------------------------------
-    # Read by the image entrypoint (MYSQL_*) and by init-master.sh (the rest).
+    # Read by the image entrypoint (MYSQL_*) and by init.sh (the rest).
     # Applied only when the data volume is empty (first start).
     environment:
       # TZ: container and MySQL system time zone, from .env.
@@ -39,17 +39,17 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       # MYSQL_PASSWORD: password of MYSQL_USER.
       MYSQL_PASSWORD: ${MYSQL_USER_PASSWORD}
-      # REPLICATION_USER: account created for the replica by init-master.sh.
+      # REPLICATION_USER: account created for the replica by init.sh.
       REPLICATION_USER: ${MYSQL_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.
       REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
-      # MONITOR_USER: read-only PMM account created by init-master.sh.
+      # MONITOR_USER: read-only PMM account created by init.sh.
       MONITOR_USER: ${MYSQL_MONITOR_USER}
       # MONITOR_PASSWORD: password of MONITOR_USER.
       MONITOR_PASSWORD: ${MYSQL_MONITOR_PASSWORD}
       # DATABASES: databases created on every start if missing. MYSQL_USER gets
       # privileges only on these databases and any configured patterns
-      # (mysql-master-entrypoint.sh).
+      # (entrypoint.sh).
       DATABASES: ${MYSQL_DATABASES}
 
     # --------------------------------------------------------------------------
@@ -58,7 +58,7 @@ services:
     # Wrapper around the image entrypoint: sets server_id, removes old
     # replication settings if this data was a promoted replica, and creates
     # the databases in DATABASES on every start.
-    entrypoint: ["/bin/bash", "/usr/local/bin/mysql-master-entrypoint.sh"]
+    entrypoint: ["/bin/bash", "/usr/local/bin/entrypoint.sh"]
     # mysqld options:
     #   --log-bin                   write the binary log the replica reads
     #   --gtid-mode, --enforce-...  GTID replication (auto-positioning)
@@ -96,9 +96,9 @@ services:
       # Database files.
       - ${MYSQL_PRIMARY_DATA_VOLUME:-mysql-data}:/var/lib/mysql
       # Custom entrypoint wrapper.
-      - ./mysql-master-entrypoint.sh:/usr/local/bin/mysql-master-entrypoint.sh:ro
+      - ./entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
       # Creates the replication and monitoring users on first initialization.
-      - ./init-master.sh:/docker-entrypoint-initdb.d/init-master.sh:ro
+      - ./init.sh:/docker-entrypoint-initdb.d/init.sh:ro
 
     # --------------------------------------------------------------------------
     # Health check

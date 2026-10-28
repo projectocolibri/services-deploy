@@ -20,7 +20,7 @@
 #                  postgres-backup-replica. Starts with the primary and
 #                  creates the TLS certificates in ./certs on its first start.
 #                Each enabled side keeps its own, independent backups.
-#                Both containers: postgres-backup.sh creates the pgBackRest
+#                Both containers: backup.sh creates the pgBackRest
 #                stanza, takes a full backup at once if there is none, then
 #                runs the schedule with supercronic.
 # Prerequisites: - The server being backed up running on this server, with its
@@ -56,7 +56,7 @@ x-postgres-backup: &postgres-backup
   # --------------------------------------------------------------------------
   # Startup
   # --------------------------------------------------------------------------
-  entrypoint: ["/bin/bash", "/usr/local/bin/postgres-backup.sh"]
+  entrypoint: ["/bin/bash", "/usr/local/bin/backup.sh"]
 
   # --------------------------------------------------------------------------
   # Health check
@@ -64,7 +64,7 @@ x-postgres-backup: &postgres-backup
   # Healthy once a backup exists, while the last backup did not fail and the
   # server's last WAL archive attempt succeeded.
   healthcheck:
-    test: ["CMD", "/bin/bash", "/usr/local/bin/postgres-backup.sh", "health"]
+    test: ["CMD", "/bin/bash", "/usr/local/bin/backup.sh", "health"]
     interval: 1m
     timeout: 10s
     retries: 3
@@ -77,7 +77,7 @@ x-pgbackrest-environment: &pgbackrest-environment
   # TZ: time zone of the schedules and log timestamps.
   TZ: ${TZ}
   # FULL_SCHEDULE / DIFF_SCHEDULE: cron expressions of the full and
-  # differential backups (postgres-backup.sh).
+  # differential backups (backup.sh).
   FULL_SCHEDULE: ${POSTGRES_BACKUP_FULL_SCHEDULE}
   DIFF_SCHEDULE: ${POSTGRES_BACKUP_DIFF_SCHEDULE}
   # Stanza (pgBackRest's name for the cluster) and the local server: data
@@ -120,7 +120,7 @@ services:
       # Repository, also mounted in the primary for WAL archiving.
       - ${POSTGRES_PRIMARY_BACKUP_VOLUME:-postgres-primary-backup}:/var/lib/pgbackrest
       # Startup, schedule and health check script.
-      - ./postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro
+      - ./backup.sh:/usr/local/bin/backup.sh:ro
 
   # ==========================================================================
   # Backups of the replica (on the replica's server)
@@ -130,7 +130,7 @@ services:
     # Runs when COMPOSE_PROFILES (.env) includes this profile.
     profiles: [postgres-backup-replica]
     # Starts as root only to copy the client certificate where postgres can
-    # read it; then runs as postgres (postgres-backup.sh).
+    # read it; then runs as postgres (backup.sh).
     user: root
     environment:
       <<: *pgbackrest-environment
@@ -161,7 +161,7 @@ services:
       # primary's server.
       - ./certs:/certs:ro
       # Startup, schedule and health check script.
-      - ./postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro
+      - ./backup.sh:/usr/local/bin/backup.sh:ro
 
   # ==========================================================================
   # pgBackRest TLS server (next to the primary)
@@ -176,7 +176,7 @@ services:
     # server, needs it there.
     profiles: [postgres-primary]
     # Starts as root only to create the certificates; then runs as postgres
-    # (postgres-backup.sh server).
+    # (backup.sh server).
     user: root
 
     # --------------------------------------------------------------------------
@@ -201,7 +201,7 @@ services:
     # --------------------------------------------------------------------------
     # Creates the certificates if ./certs has none, then serves. Only
     # clients with the client certificate signed by this CA get in.
-    entrypoint: ["/bin/bash", "/usr/local/bin/postgres-backup.sh", "server"]
+    entrypoint: ["/bin/bash", "/usr/local/bin/backup.sh", "server"]
 
     # --------------------------------------------------------------------------
     # Network
@@ -222,7 +222,7 @@ services:
       # Certificates, created here on the first start.
       - ./certs:/certs
       # Startup script (certificates and server).
-      - ./postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro
+      - ./backup.sh:/usr/local/bin/backup.sh:ro
 
 # ----------------------------------------------------------------------------
 # Volumes

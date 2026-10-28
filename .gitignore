@@ -51,6 +51,15 @@ gateway/http/certs/*
 !gateway/http/certs/.gitkeep
 
 # ----------------------------------------------------------------------------
+# HTTP gateway active configuration
+# ----------------------------------------------------------------------------
+# Keep reusable nginx templates in Git, but keep the active deployment
+# configuration local so an infrastructure update cannot replace routes,
+# domains, upstreams, or certificate paths.
+gateway/http/conf.d/*.conf
+!gateway/http/conf.d/*.conf.example
+
+# ----------------------------------------------------------------------------
 # Machine-specific Compose overrides
 # ----------------------------------------------------------------------------
 # Loaded automatically by `docker compose`; used locally to publish internal

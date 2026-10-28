@@ -29,7 +29,7 @@
 #                only when complete (and verified: decompress and prepare a
 #                copy of the chain up to it), then retention. An incremental
 #                without a full backup of this server is taken as full.
-#                "prepare TARGET_TIME": used by mysql-restore.sh: prepares
+#                "prepare TARGET_TIME": used by restore.sh: prepares
 #                the newest backups finished before TARGET_TIME into /restore.
 #                "health": the health check.
 # Prerequisites: - percona/percona-xtrabackup image matching the server's major

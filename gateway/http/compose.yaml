@@ -7,7 +7,8 @@
 #                are forwarded over plain HTTP to app containers on the
 #                internal network. Hosts without a config are refused.
 # Prerequisites: - TCP ports HTTP_PORT and HTTPS_PORT open in the firewall
-#                - One conf.d/<app>.conf per app (see app.conf.example)
+#                - Copy conf.d/sites.conf.example to sites.conf, remove
+#                  default.conf, and customize the public and internal sites.
 #                - Certificates in certs/<domain>/fullchain.pem and privkey.pem
 # Variables:     HTTP_PORT, HTTPS_PORT and TZ from .env.
 # ============================================================================
@@ -42,8 +43,7 @@ services:
     # Configuration and certificates (read-only)
     # --------------------------------------------------------------------------
     volumes:
-      # Site configs: default.conf plus one <app>.conf per app. Only *.conf
-      # files are loaded. Reload after changes:
+      # Site configs. Only *.conf files are loaded. Reload after changes:
       #   docker compose exec http nginx -s reload
       - ./conf.d:/etc/nginx/conf.d:ro
       # TLS certificates: certs/<domain>/fullchain.pem and privkey.pem

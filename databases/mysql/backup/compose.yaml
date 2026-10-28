@@ -12,7 +12,7 @@
 #                  on the replica's server, so the primary is not loaded. The
 #                  replica's own binary logs hold every replicated
 #                  transaction, with the primary's GTIDs.
-#                Each container (mysql-backup.sh) backs up only its local
+#                Each container (backup.sh) backs up only its local
 #                server, so each enabled side keeps its own, independent
 #                backups:
 #                  - in the background: streams the server's binary logs
@@ -48,7 +48,7 @@ x-mysql-backup: &mysql-backup
   # --------------------------------------------------------------------------
   # Startup
   # --------------------------------------------------------------------------
-  entrypoint: ["/bin/bash", "/usr/local/bin/mysql-backup.sh"]
+  entrypoint: ["/bin/bash", "/usr/local/bin/backup.sh"]
 
   # --------------------------------------------------------------------------
   # Health check
@@ -56,7 +56,7 @@ x-mysql-backup: &mysql-backup
   # Healthy while the binary log stream runs, once a backup exists and while
   # the last backup did not fail.
   healthcheck:
-    test: ["CMD", "/bin/bash", "/usr/local/bin/mysql-backup.sh", "health"]
+    test: ["CMD", "/bin/bash", "/usr/local/bin/backup.sh", "health"]
     interval: 1m
     timeout: 10s
     retries: 3
@@ -107,7 +107,7 @@ services:
       # Backups (chains/) and binary logs (binlog/).
       - ${MYSQL_PRIMARY_BACKUP_VOLUME:-mysql-primary-backup}:/backups
       # Startup, backup, schedule and health check script.
-      - ./mysql-backup.sh:/usr/local/bin/mysql-backup.sh:ro
+      - ./backup.sh:/usr/local/bin/backup.sh:ro
 
   # ==========================================================================
   # Backups of the replica (on the replica's server)
@@ -132,7 +132,7 @@ services:
       # Backups (chains/) and binary logs (binlog/).
       - ${MYSQL_REPLICA_BACKUP_VOLUME:-mysql-replica-backup}:/backups
       # Startup, backup, schedule and health check script.
-      - ./mysql-backup.sh:/usr/local/bin/mysql-backup.sh:ro
+      - ./backup.sh:/usr/local/bin/backup.sh:ro
 
 # ----------------------------------------------------------------------------
 # Volumes

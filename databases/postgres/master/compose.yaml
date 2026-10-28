@@ -6,7 +6,7 @@
 #                instance with pg_basebackup on its first start and then
 #                streams its WAL. Reachable as postgres-primary.
 # Prerequisites: - Credentials from .env
-#                - postgres-master-entrypoint.sh and init-master.sh next to
+#                - entrypoint.sh and init.sh next to
 #                  this file
 #                WAL is archived into postgres-primary-backup once
 #                postgres-backup-primary has created its pgBackRest stanza
@@ -37,7 +37,7 @@ services:
     # --------------------------------------------------------------------------
     # Credentials
     # --------------------------------------------------------------------------
-    # Read by the image entrypoint (POSTGRES_*) and by init-master.sh (the
+    # Read by the image entrypoint (POSTGRES_*) and by init.sh (the
     # rest). Applied only when the data volume is empty (first start). No
     # POSTGRES_DB: only the built-in "postgres" database is created.
     environment:
@@ -53,17 +53,17 @@ services:
       # database (the image's default is SQL_ASCII). Fixed when the data
       # directory is initialized.
       POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
-      # REPLICATION_USER: replication role created by init-master.sh.
+      # REPLICATION_USER: replication role created by init.sh.
       REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
       # REPLICATION_PASSWORD: password of REPLICATION_USER.
       REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
-      # MONITOR_USER: read-only PMM role created by init-master.sh.
+      # MONITOR_USER: read-only PMM role created by init.sh.
       MONITOR_USER: ${POSTGRES_MONITOR_USER}
       # MONITOR_PASSWORD: password of MONITOR_USER.
       MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD}
       # APP_USER: application role created on every start if missing, granted
       # access to every database and allowed to create databases
-      # (postgres-master-entrypoint.sh).
+      # (entrypoint.sh).
       APP_USER: ${POSTGRES_APP_USER}
       # APP_PASSWORD: password of APP_USER.
       APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
@@ -82,7 +82,7 @@ services:
     # Wrapper around the image entrypoint: promotes the data if it was a
     # replica (removes standby.signal), and creates APP_USER and the
     # databases in DATABASES on every start.
-    entrypoint: ["/bin/bash", "/usr/local/bin/postgres-master-entrypoint.sh"]
+    entrypoint: ["/bin/bash", "/usr/local/bin/entrypoint.sh"]
     # Server settings (-c name=value):
     #   wal_level=replica          write enough WAL for streaming replication
     #   max_wal_senders=10         concurrent replication connections allowed
@@ -139,10 +139,10 @@ services:
       # archive_command.
       - ${POSTGRES_PRIMARY_BACKUP_VOLUME:-postgres-primary-backup}:/var/lib/pgbackrest
       # Custom entrypoint wrapper.
-      - ./postgres-master-entrypoint.sh:/usr/local/bin/postgres-master-entrypoint.sh:ro
+      - ./entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
       # Creates roles, the query analytics extension and the replication
       # pg_hba rule on first initialization.
-      - ./init-master.sh:/docker-entrypoint-initdb.d/init-master.sh:ro
+      - ./init.sh:/docker-entrypoint-initdb.d/init.sh:ro
 
     # --------------------------------------------------------------------------
     # Health check
