@@ -29,6 +29,9 @@
 #                only when complete (and verified: decompress and prepare a
 #                copy of the chain up to it), then retention. An incremental
 #                without a full backup of this server is taken as full.
+#                Backup operation logs are emitted to the container log only;
+#                the backup volume contains recovery data and metadata, not
+#                disposable log files.
 #                "prepare TARGET_TIME": used by restore.sh: prepares
 #                the newest backups finished before TARGET_TIME into /restore.
 #                "health": the health check.
@@ -59,7 +62,7 @@
 #   run_dir                (local) container-only state: credentials, lock,
 #                          stream PID, status of the last backup (ok, failed)
 #   root_cnf               (local) option file with the root credentials
-#   chain, base, target, partial
+#   chain, base, target, partial, operation_log
 #                          (local) chain directory, backup the incremental
 #                          builds on, final and in-progress backup directories
 #   uuid                   (local) server_uuid of the server
@@ -102,7 +105,7 @@ query() {
 list_chains() {
     local c
     find "${chains_dir}" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
-        -regex '.*/[0-9]{8}-[0-9]{6}' 2>/dev/null | sort | while read -r c; do
+        -regex '.*/([0-9]{8}-[0-9]{6}|[0-9]{14})' 2>/dev/null | sort | while read -r c; do
         [ -d "${c}/$(basename "${c}")-full" ] && echo "${c}"
     done
 }
@@ -110,7 +113,7 @@ list_chains() {
 # list_backups CHAIN: complete backups of a chain, in order.
 list_backups() {
     find "$1" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
-        -regex '.*/[0-9]{8}-[0-9]{6}-(full|incr)' | sort
+        -regex '.*/([0-9]{8}-[0-9]{6}|[0-9]{14})-(full|incr)' | sort
 }
 
 # finished DIR: epoch at which a backup finished.
@@ -194,8 +197,8 @@ fi
 # ============================================================================
 
 # prune: removes a chain once the next chain's full backup finished before
-# the retention cutoff (the next chain then covers the whole retention), and
-# failed logs past it. Binary logs: per server, the files last written before
+# the retention cutoff (the next chain then covers the whole retention).
+# Binary logs: per server, the files last written before
 # its oldest remaining chain started (never the newest file); a server
 # without chains, once all its files are past the cutoff.
 prune() {
@@ -209,7 +212,7 @@ prune() {
             rm -rf "${chains[i]}"
         fi
     done
-    find "${chains_dir}" -maxdepth 1 -name '*.failed.log' ! -newermt "@${cutoff}" -delete
+    find "${chains_dir}" -type f -name '*.log' -delete
 
     for dir in "${binlog_root}"/*/; do
         [ -d "${dir}" ] || continue
@@ -244,7 +247,7 @@ backup() {
     fi
 
     start=$(date +%s)
-    ts="$(date -d "@${start}" +%Y%m%d-%H%M%S)"
+    ts="$(date -d "@${start}" +%Y%m%d%H%M%S)"
     if [ "${type}" = "full" ]; then
         chain="${chains_dir}/${ts}"
         mkdir -p "${chain}"
@@ -259,30 +262,32 @@ backup() {
         && tracking=(--page-tracking)
 
     log "starting ${type} backup of ${source_host} into ${target}${base:+ (since $(basename "${base}"))}"
+    operation_log="${run_dir}/backup.log"
+    rm -f "${operation_log}"
     xtrabackup --defaults-extra-file="${root_cnf}" --backup --host="${source_host}" \
         --target-dir="${partial}" --parallel="${threads}" \
         --compress=zstd --compress-threads="${threads}" \
-        "${tracking[@]}" ${base:+--incremental-basedir="${base}"} > "${partial}.log" 2>&1
+        "${tracking[@]}" ${base:+--incremental-basedir="${base}"} 2>&1 | tee "${operation_log}"
     local status=$?
 
     if [ "${status}" -eq 0 ] && [ "${verify}" = "true" ]; then
         log "verifying (decompress and prepare a copy of the chain up to this backup)"
-        prepare_backups /backups/verify.tmp $(list_backups "${chain}") "${partial}" >> "${partial}.log" 2>&1
+        prepare_backups /run/mysql-backup/verify.tmp $(list_backups "${chain}") "${partial}" 2>&1 | tee -a "${operation_log}"
         status=$?
-        rm -rf /backups/verify.tmp
+        rm -rf /run/mysql-backup/verify.tmp
     fi
 
     if [ "${status}" -ne 0 ]; then
-        log "${type} backup FAILED, last lines of the log:"
-        tail -20 "${partial}.log"
-        mv "${partial}.log" "${chains_dir}/${ts}-${type}.failed.log"
+        log "${type} backup FAILED, last lines:"
+        tail -20 "${operation_log}"
+        rm -f "${operation_log}"
         rm -rf "${partial}"
         [ "${type}" = "full" ] && rm -rf "${chain}"
         touch "${run_dir}/failed"
         return 1
     fi
 
-    mv "${partial}.log" "${partial}/backup.log"
+    rm -f "${operation_log}"
     date +%s > "${partial}/finished"
     mv "${partial}" "${target}"
     touch "${run_dir}/ok"
@@ -401,7 +406,8 @@ rm -f "${run_dir}/ok" "${run_dir}/failed" "${run_dir}/stream.pid"
 ( umask 077; printf '[client]\nuser=root\npassword="%s"\n' "${MYSQL_ROOT_PASSWORD}" > "${root_cnf}" )
 
 # Leftovers of a backup interrupted by a stop or crash.
-rm -rf "${chains_dir}"/*/*.partial "${chains_dir}"/*/*.partial.log /backups/verify.tmp
+rm -rf "${chains_dir}"/*/*.partial /run/mysql-backup/verify.tmp
+find "${chains_dir}" -type f -name '*.log' -delete
 for c in "${chains_dir}"/*/; do
     [ -d "${c}" ] && [ ! -d "${c}$(basename "${c}")-full" ] && rm -rf "${c}"
 done

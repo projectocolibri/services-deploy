@@ -104,7 +104,8 @@ services:
     volumes:
       # Primary's data directory, read-only: the backup never changes it.
       - ${MYSQL_PRIMARY_DATA_VOLUME:-mysql-data}:/var/lib/mysql:ro
-      # Backups (chains/) and binary logs (binlog/).
+      # Backups (chains/) and binary logs (binlog/). Operation logs are sent
+      # to the container output, not stored in this volume.
       - ${MYSQL_PRIMARY_BACKUP_VOLUME:-mysql-primary-backup}:/backups
       # Startup, backup, schedule and health check script.
       - ./backup.sh:/usr/local/bin/backup.sh:ro
@@ -129,7 +130,8 @@ services:
     volumes:
       # Replica's data directory, read-only: the backup never changes it.
       - ${MYSQL_REPLICA_DATA_VOLUME:-mysql-replica-data}:/var/lib/mysql:ro
-      # Backups (chains/) and binary logs (binlog/).
+      # Backups (chains/) and binary logs (binlog/). Operation logs are sent
+      # to the container output, not stored in this volume.
       - ${MYSQL_REPLICA_BACKUP_VOLUME:-mysql-replica-backup}:/backups
       # Startup, backup, schedule and health check script.
       - ./backup.sh:/usr/local/bin/backup.sh:ro
