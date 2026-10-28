@@ -30,15 +30,6 @@ databases/postgres/backup/certs/*
 !databases/postgres/backup/certs/.gitkeep
 
 # ----------------------------------------------------------------------------
-# App binaries and build output
-# ----------------------------------------------------------------------------
-# App exports (apps/<app>/source/) and JRE archives (apps/<app>/jre.tar.gz)
-# are copied into the app images at build time and never committed. The
-# .gitkeep placeholders keep the empty folders.
-apps/*/source/*
-!apps/*/source/.gitkeep
-
-# ----------------------------------------------------------------------------
 # VPN gateway state (WireGuard)
 # ----------------------------------------------------------------------------
 # Host: server keys, peer keys and generated client configs are secrets

@@ -1,10 +1,9 @@
 # ============================================================================
 # nginx internal sites example (*.example.lan)
 #
-# Purpose:       Template for publishing the apps and the admin tools on
+# Purpose:       Template for publishing the admin tools on
 #                internal host names over HTTPS, e.g.
-#                https://java-service.apps.example.lan -> java-service-example
-#                https://pmm.monitor.example.lan       -> pmm-server
+#                  https://pmm.monitor.example.lan       -> pmm-server
 # Role:          Not loaded as-is (only *.conf files are). Copy it to
 #                <name>.conf in this directory, replace example.lan with the
 #                internal domain, then reload nginx:
@@ -20,8 +19,7 @@
 #                    ./internal-ca.sh example.lan \
 #                      '*.apps.example.lan' '*.mysql.example.lan' \
 #                      '*.postgres.example.lan' '*.monitor.example.lan'
-#                - Every service listening on the port in its map line: its
-#                  *_PORT in .env (8080 for all by default)
+#                  - Every service listening on the port in its map line.
 #
 # Values to replace:
 #   example.lan                 internal domain (map, server_name, cert paths)
@@ -45,11 +43,6 @@
 map $host $internal_upstream {
     default                                 "";
 
-    # Apps
-    java-service.apps.example.lan           http://java-service-example:8080;
-    angular.apps.example.lan                http://angular-app-example:8080;
-    nodejs.apps.example.lan                 http://nodejs-app-example:8080;
-
     # Databases: admin panels
     admin.mysql.example.lan                 http://mysql-admin:8080;
     admin.postgres.example.lan              http://postgres-admin:8080;
@@ -65,7 +58,7 @@ map $host $internal_upstream {
 # ----------------------------------------------------------------------------
 server {
     listen 80;
-    server_name *.apps.example.lan *.mysql.example.lan
+    server_name *.mysql.example.lan
                 *.postgres.example.lan *.monitor.example.lan;
     return 301 https://$host$request_uri;
 }
@@ -76,7 +69,7 @@ server {
 server {
     listen 443 ssl;
     http2 on;
-    server_name *.apps.example.lan *.mysql.example.lan
+    server_name *.mysql.example.lan
                 *.postgres.example.lan *.monitor.example.lan;
 
     # --- TLS ---------------------------------------------------------------

@@ -94,7 +94,7 @@ The replicas clone their primary on the first start: allow a minute (the MySQL r
 
 ### One project, many roles
 
-- The root **`compose.yaml`** includes every stack (`gateway/`, `monitoring/`, `databases/`, `apps/`) and declares the shared network. Every folder with a `compose.yaml` is a stack; stacks list their sub-stacks with `include`.
+- The root **`compose.yaml`** includes the infrastructure stacks (`gateway/`, `monitoring/`, and `databases/`) and declares the shared network. Applications are deployment-specific and are added through a local or private Compose override.
 - **Every service has its own Compose profile.** `COMPOSE_PROFILES` in `.env` lists the services of *this* server, and `docker compose up -d` starts exactly those. All servers run the same committed files; only `.env` differs.
 - **No service depends on another stack.** Each one waits for what it needs by itself (entrypoint wrappers poll their dependencies), so any subset of profiles works.
 
@@ -145,7 +145,7 @@ See the diagram at the top.
 | 1. Project | **`PROJECT_NAME`**: prefix of containers and volumes. Renaming it orphans existing volumes. |
 | 2. Profiles | **`COMPOSE_PROFILES`**: what this server runs |
 | 3. Network | **`NETWORK_NAME`**, **`NETWORK_SUBNET`** (also routed through the VPN), **`VPN_DNS_IP`** |
-| 4. Services | `TZ` and storage, then one block per service: VPN host, VPN client, HTTP, PMM Server, PMM client, Dozzle, Portainer, MySQL, PostgreSQL, apps |
+| 4. Services | `TZ` and storage, then one block per infrastructure service: VPN host, VPN client, HTTP, PMM Server, PMM client, Dozzle, Portainer, MySQL, and PostgreSQL |
 
 ### 2.2 Values to set for production
 
@@ -180,7 +180,6 @@ Passwords and users are applied when a data volume is **first initialized**: cha
 | | `postgres-backup-primary` | Backups of the primary (on its server) |
 | | `postgres-backup-replica` | Backups of the replica (on its server) |
 | | `postgres-admin` | pgAdmin |
-| Apps | `java-service-example`, `angular-app-example`, `nodejs-app-example` | App examples |
 
 ```bash
 # One server with everything (default), backups of the replicas
@@ -201,7 +200,7 @@ COMPOSE_PROFILES=mysql-primary,mysql-backup-primary
 - After changing roles, `docker compose up -d` starts the new services.
 - Commands only see active profiles: stop a removed role explicitly (`docker compose --profile mysql-admin down`, or `--profile '*'` for all).
 - With no profile set, Compose starts nothing (`no service selected`).
-- The apps are not in the default list: add them where they run.
+- Applications are not part of this repository or its default profiles. Add them through a deployment-specific Compose file.
 
 ### 2.4 Storage
 
@@ -220,7 +219,6 @@ Every service keeps its data in a **Docker volume** by default. Set its variable
 | `POSTGRES_ADMIN_DATA_VOLUME` | `pgadmin-data` | pgAdmin | `5050:0` |
 | `PMM_DATA_VOLUME` | `pmm-data` | PMM Server | `1000:0` |
 | `PORTAINER_DATA_VOLUME` | `portainer-data` | Portainer | `root` |
-| `JAVA_SERVICE_EXAMPLE_DATA_VOLUME` | `java-service-example-data` | Java service example | `1000:1000` |
 
 ```bash
 # .env — everything of this server under /srv/mydata (c:/mydata on Windows)
@@ -416,10 +414,6 @@ databases/
     replica/                 replica (postgres-replica-db): clone + streaming
     admin/                   pgAdmin
     backup/                  pgBackRest image, postgres-backup.sh, postgres-restore.sh, certs/
-apps/
-  java-service-example/      Java export + Linux JRE (source/, jre.tar.gz)
-  angular-app-example/       Angular SSR build run by Node.js (source/)
-  nodejs-app-example/        Node.js app, dependencies installed in the image (source/)
 ```
 
 ### 3.2 Repository conventions
@@ -432,38 +426,13 @@ apps/
 - **LF line endings** everywhere (`.gitattributes`): CRLF breaks shell scripts and `.env` values.
 - **Scripts** are Bash with `set -uo pipefail` (or `-euo`), log lines prefixed `[component]`, and a documented variable list.
 
-### 3.3 Add an app
-
-Each app is a folder in `apps/` with **`source/`** (the export, not committed), a **`Dockerfile`** (copies it in and runs it) and a **`compose.yaml`** (profile, variables, volumes).
-
-1. Copy the example of the same type: `cp -r apps/nodejs-app-example apps/orders-api`.
-2. Rename the service and profile in `apps/orders-api/compose.yaml` (`nodejs-app-example` → `orders-api`); for a Java app, also the launcher name in the `Dockerfile`.
-3. Copy its variables in `.env.example` and `.env` with the new prefix (`ORDERS_API_PORT`, `ORDERS_API_NODE_ENV`, …).
-4. Add `- path: ./orders-api/compose.yaml` to `apps/compose.yaml`.
-5. Put the app in `source/`, then build and start it:
-
-   ```bash
-   docker compose --profile orders-api up -d --build
-   docker compose logs -f orders-api
-   ```
-
-6. Publish it: `gateway/http/conf.d/orders-api.conf` with `proxy_pass http://orders-api:8080` ([2.6](#26-http-gateway)).
-
-**Deploy a new version**: replace `source/` (and `jre.tar.gz`), then `docker compose up -d --build <app>`.
-
-| App type | What goes in `source/` | Runtime notes |
-|---|---|---|
-| **Java** (`java-service-example`) | Linux export: launcher, `.ini`, `plugins/`, `configuration/`; JRE as `jre.tar.gz` with top folder `jre/` | Runs `./<launcher> -nosplash -consoleLog -data /data/workspace`. Listen on `0.0.0.0:<JAVA_SERVICE_EXAMPLE_PORT>`. JVM options in the `.ini` `-vmargs`. Headless: GUI apps need `libgtk-3-0 libxtst6`. Java is killed on stop without shutdown hooks. |
-| **Angular SSR** (`angular-app-example`) | Content of `dist/<app>/` (`server/`, `browser/`) | Runs `node server/server.mjs` (Node.js 24). `ANGULAR_APP_EXAMPLE_ALLOWED_HOSTS=*`; the gateway controls domains. `TRUST_PROXY_HEADERS=x-forwarded-proto` for HTTPS awareness. |
-| **Node.js** (`nodejs-app-example`) | `package.json`, `package-lock.json` and the code (compiled output for TypeScript) | `npm ci --omit=dev` in the image, runs `node .`. Listen on `process.env.PORT` on all interfaces. Runtime packages belong in `dependencies`. |
-
-### 3.4 Add a monitoring item
+### 3.3 Add a monitoring item
 
 - **Alert rule:** create it in the UI and export it (`GET /graph/api/v1/provisioning/alert-rules/<uid>`), or copy a file in `monitoring/pmm/alerting/rules/`, give it a new **`uid`**, and save it as a new `.json`. The metrics data source is **`PA58DA793C7250F1B`**. It is created on the next `pmm-server` start. Edit existing rules in the UI; to remove one, delete both the file and the rule.
 - **Dashboard:** add JSON to `monitoring/pmm/dashboards/Custom/`; PMM re-reads it every 60 seconds.
 - **Custom metric:** add a query to `monitoring/client/custom-queries/` (see `postgresql/replica-lag.yml`), then restart `pmm-client`.
 
-### 3.5 Local overrides
+### 3.4 Local overrides
 
 A `compose.override.yaml` (not committed) publishes internal tools on `127.0.0.1` for local work:
 
@@ -475,6 +444,35 @@ services:
     ports: ["127.0.0.1:8082:8080"]
   portainer:
     ports: ["127.0.0.1:8083:8080"]
+```
+
+The same ignored or private override can define deployment-specific
+applications. Keep application source and application-only variables outside
+this repository; the infrastructure `.env` should contain only stable
+infrastructure settings.
+
+```yaml
+services:
+  customer-api:
+    build:
+      context: ../customer-apps/customer-api
+    restart: always
+    expose:
+      - "8080"
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+```
+
+The application service joins this Compose project's default network, so the
+HTTP gateway can proxy to `http://customer-api:8080`. Add its nginx site
+configuration in the deployment-specific files under
+`gateway/http/conf.d/`, or keep that configuration in the private deployment
+repository as well. Validate the combined deployment with:
+
+```bash
+docker compose config --quiet
+docker compose up -d --build
 ```
 
 ---
@@ -683,4 +681,4 @@ On the replica's server: `postgres-backup-replica`, `postgres-replica-db` and `<
 - [ ] Storage chosen for every service (`*_DATA_VOLUME`, `*_BACKUP_VOLUME`), folders created with their owners, enough disk for backups
 - [ ] Backup profiles on the chosen side(s), backup containers healthy, a test restore done (PostgreSQL replica side: `ca.crt`, `client.crt`, `client.key` copied)
 - [ ] PMM contact points and notification policies configured and tested
-- [ ] Apps: exports in `source/` (and JREs in `jre.tar.gz`), app variables in `.env`, apps running
+- [ ] Deployment-specific applications, if any, are defined outside this infrastructure repository and are running
