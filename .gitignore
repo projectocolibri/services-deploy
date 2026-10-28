@@ -67,6 +67,18 @@ gateway/http/conf.d/*.conf
 compose.override.yaml
 compose.override.yml
 
+# The committed example is a template for deployment-specific applications.
+!compose.override.yaml.example
+
+# ----------------------------------------------------------------------------
+# Application source and local JRE archives
+# ----------------------------------------------------------------------------
+# Application exports, package sources, and Java runtimes are supplied by each
+# deployment and are not part of the infrastructure repository.
+apps/*/source/*
+!apps/*/source/.gitkeep
+apps/*/*.tar.gz
+
 # ----------------------------------------------------------------------------
 # Operating system and editor files
 # ----------------------------------------------------------------------------

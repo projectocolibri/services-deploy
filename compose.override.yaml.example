@@ -1,0 +1,74 @@
+# ============================================================================
+# Deployment application override example
+#
+# Purpose:       Template for adding deployment-specific Java, Angular SSR,
+#                and Node.js applications to the infrastructure Compose
+#                project.
+# Role:          Copy to compose.override.yaml and edit the build contexts,
+#                service names, environment, and profiles. This file is not
+#                loaded automatically while it has the .example suffix.
+# Prerequisites: Application source in apps/<service>/source/. The Java
+#                example also needs apps/java-service-example/jre.tar.gz.
+# Variables:     Application settings are defined here so the infrastructure
+#                .env remains independent from application deployments.
+# ============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # Java exported service
+  # --------------------------------------------------------------------------
+  java-service-example:
+    build:
+      context: ./apps/java-service-example
+    restart: always
+    profiles: [java-service-example]
+    init: true
+    expose:
+      - "8080"
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - java-service-example-data:/data
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
+
+  # --------------------------------------------------------------------------
+  # Angular SSR export
+  # --------------------------------------------------------------------------
+  angular-app-example:
+    build:
+      context: ./apps/angular-app-example
+    restart: always
+    profiles: [angular-app-example]
+    init: true
+    expose:
+      - "${ANGULAR_APP_PORT:-8080}"
+    environment:
+      TZ: ${TZ}
+      NODE_ENV: ${ANGULAR_APP_NODE_ENV:-production}
+      PORT: ${ANGULAR_APP_PORT:-8080}
+      NG_ALLOWED_HOSTS: ${ANGULAR_APP_ALLOWED_HOSTS:-*}
+      NG_TRUST_PROXY_HEADERS: ${ANGULAR_APP_TRUST_PROXY_HEADERS:-x-forwarded-proto}
+
+  # --------------------------------------------------------------------------
+  # Node.js application
+  # --------------------------------------------------------------------------
+  nodejs-app-example:
+    build:
+      context: ./apps/nodejs-app-example
+    restart: always
+    profiles: [nodejs-app-example]
+    init: true
+    expose:
+      - "${NODEJS_APP_PORT:-8080}"
+    environment:
+      TZ: ${TZ}
+      NODE_ENV: ${NODEJS_APP_NODE_ENV:-production}
+      PORT: ${NODEJS_APP_PORT:-8080}
+
+volumes:
+  java-service-example-data:

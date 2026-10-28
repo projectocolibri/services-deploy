@@ -475,7 +475,36 @@ docker compose config --quiet
 docker compose up -d --build
 ```
 
-### 3.5 Configuration ownership
+### 3.5 Application examples
+
+The repository includes generic application packaging examples under
+`apps/`, but not application source or Java runtime archives:
+
+```text
+apps/
+├── java-service-example/      # Linux export + jre.tar.gz
+├── angular-app-example/       # Angular SSR export
+└── nodejs-app-example/        # package.json + package-lock.json + app
+```
+
+Copy the override template and add the application profiles to the local
+`.env`:
+
+```bash
+cp compose.override.yaml.example compose.override.yaml
+```
+
+```env
+COMPOSE_PROFILES=...,java-service-example,angular-app-example,nodejs-app-example
+```
+
+The override is intentionally an example and is not loaded automatically.
+Keep real application source, `jre.tar.gz`, application environment variables,
+and active nginx routes in the deployment's private files. The Java example
+expects an exported launcher named `services`; change the `CMD` in its
+Dockerfile for another launcher.
+
+### 3.6 Configuration ownership
 
 Reusable infrastructure configuration is committed and updated with the
 repository. Deployment-owned active configuration and generated state are
