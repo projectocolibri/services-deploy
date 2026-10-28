@@ -17,6 +17,7 @@
 # The root .env holds this server's profiles, production passwords and
 # host-specific values. Created from .env.example.
 .env
+.version
 
 # ----------------------------------------------------------------------------
 # Database backups and their secrets

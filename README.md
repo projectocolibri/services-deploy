@@ -71,6 +71,39 @@ docker compose up -d
 docker compose ps
 ```
 
+### Versioned deployment
+
+Deployments can follow immutable Git tags while keeping `apps/`, `.env`, the
+Compose override, and active nginx configuration local to the deployment.
+The scripts use the latest `vMAJOR.MINOR.PATCH` tag and never run `git clean`.
+
+```text
+.version       local deployed tag, ignored by Git
+deploy.ps1     Windows deployment commands
+deploy.sh      Linux deployment commands
+```
+
+Commands:
+
+```bash
+./deploy.sh check
+./deploy.sh update
+./deploy.sh run
+```
+
+```powershell
+.\deploy.ps1 check
+.\deploy.ps1 update
+.\deploy.ps1 run
+```
+
+`check` reports the latest tag without changing files. `update` switches
+tracked infrastructure files to the latest tag and validates Compose, but
+does not start containers. `run` checks for a newer tag, asks for confirmation
+before updating, validates the configuration, and runs `docker compose up -d`.
+Ignored deployment files are preserved. Do not run `git clean -fdx` because it
+can remove application source, secrets, and local Compose configuration.
+
 The replicas clone their primary on the first start: allow a minute (the MySQL replica restarts once after cloning). Before going to production, replace every default password in `.env`, set **`VPN_HOST`** and go through the [production checklist](#production-checklist).
 
 ---
