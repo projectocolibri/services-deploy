@@ -1,14 +1,15 @@
 # ============================================================================
-# PMM client and cAdvisor
+# PMM client and Docker metrics exporter
 #
 # Purpose:       Collects metrics on this server and registers them in PMM
 #                Server.
 # Role:          - pmm-client: registers the server as a PMM node named after
 #                  its hostname (CPU, memory, disk, load), this server's
-#                  cAdvisor and, when MONITOR_DATABASES=true, the databases.
-#                - cadvisor: CPU, memory, network and disk I/O per container.
+#                  Docker metrics exporter and, when MONITOR_DATABASES=true,
+#                  the databases.
+#                - docker-exporter: per-container metrics from the Docker API.
 # Prerequisites: - PMM Server reachable at MONITOR_SERVER_ADDRESS
-#                - Linux host (cAdvisor mounts /sys, /var/lib/docker, /dev/kmsg)
+#                - Linux host with /var/run/docker.sock
 #                - Monitoring accounts created on the database primaries
 # Variables:     MONITOR_SERVER_ADDRESS, PMM_ADMIN_PASSWORD, MONITOR_DATABASES,
 #                MYSQL_MONITOR_USER, MYSQL_MONITOR_PASSWORD,
@@ -75,9 +76,9 @@ services:
     # --------------------------------------------------------------------------
     # Network
     # --------------------------------------------------------------------------
-    # Shares cAdvisor's network namespace: reaches it on localhost:8080, and
-    # each server's client and cAdvisor stay paired without per-server names.
-    network_mode: service:cadvisor
+    # Shares the exporter network namespace: reaches it on localhost:8080, and
+    # each server's client and exporter stay paired without per-server names.
+    network_mode: service:docker-exporter
 
     # --------------------------------------------------------------------------
     # Host information and scripts
@@ -93,11 +94,11 @@ services:
       # single file to keep the image's bundled queries.
       - ./custom-queries/postgresql/replica-lag.yml:/usr/local/percona/pmm/collectors/custom-queries/postgresql/medium-resolution/replica-lag.yml:ro
 
-  cadvisor:
+  docker-exporter:
     # --------------------------------------------------------------------------
     # Image and restart policy
     # --------------------------------------------------------------------------
-    image: ghcr.io/google/cadvisor:v0.60.6
+    image: python:3.13-alpine
     restart: always
     # Runs when COMPOSE_PROFILES (.env) includes this profile.
     profiles: [metrics]
@@ -105,43 +106,14 @@ services:
     # --------------------------------------------------------------------------
     # Host access
     # --------------------------------------------------------------------------
-    # Privileged with the kernel log device, to read cgroup and OOM data.
-    privileged: true
-    devices:
-      - /dev/kmsg
-
-    # --------------------------------------------------------------------------
-    # Time zone
-    # --------------------------------------------------------------------------
-    environment:
-      # TZ: container time zone, from .env.
-      # The image has no time zone data, so it stays on UTC.
-      TZ: ${TZ}
-
-    # --------------------------------------------------------------------------
-    # Collection settings
-    # --------------------------------------------------------------------------
-    #   --docker_only                   containers only, not every host cgroup
-    #   --housekeeping_interval         how often stats are collected
-    #   --store_container_labels=false  do not turn every Docker label into a
-    #                                   metric label
-    #   --whitelisted_container_labels  keep only the Compose project and
-    #                                   service labels, to tell containers apart
-    #   --disable_metrics               skip expensive or unused metric groups
+    # The exporter reads Docker's API and serves Prometheus metrics on 8080.
     command:
-      - --docker_only=true
-      - --housekeeping_interval=30s
-      - --store_container_labels=false
-      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
-      - --disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
+      - python
+      - /usr/local/bin/docker_exporter.py
 
     # --------------------------------------------------------------------------
-    # Host filesystems (read-only)
+    # Docker API socket (read-only)
     # --------------------------------------------------------------------------
-    # No published ports: PMM scrapes it through pmm-client (localhost:8080).
     volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-      - /dev/disk/:/dev/disk:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./docker_exporter.py:/usr/local/bin/docker_exporter.py:ro

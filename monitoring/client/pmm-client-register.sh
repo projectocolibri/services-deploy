@@ -4,14 +4,14 @@
 #
 # Purpose:       Registers this server's services in PMM Server.
 # Role:          Runs as PMM_AGENT_PRERUN_SCRIPT on every pmm-client start:
-#                  - always: this server's cAdvisor (external exporter)
+#                  - always: this server's Docker metrics exporter
 #                  - when MONITOR_DATABASES=true: whichever of mysql-primary,
 #                    mysql-replica, postgres-primary and postgres-replica are
 #                    running on the network. Enable it on one server only.
 #                Services that are not running are skipped; restart
 #                pmm-client to register them later.
 # Prerequisites: - pmm-agent starting in the same container (pmm-admin needs it)
-#                - cAdvisor on localhost:8080 (shared network namespace)
+#                - Docker metrics exporter on localhost:8080 (shared network namespace)
 #                - Monitoring accounts on the database primaries
 #
 # Variables:
@@ -84,13 +84,14 @@ remove() {
 }
 
 # ----------------------------------------------------------------------------
-# Container metrics (cAdvisor)
+# Container metrics (Docker API exporter)
 # ----------------------------------------------------------------------------
-# Registered as an external exporter named cadvisor-<node>, group cadvisor.
+# Registered as an external exporter named docker-exporter-<node>.
 if wait_for localhost 8080; then
     remove external "cadvisor-${node}"
-    pmm-admin add external --service-name="cadvisor-${node}" \
-        --listen-port=8080 --group=cadvisor
+    remove external "docker-exporter-${node}"
+    pmm-admin add external --service-name="docker-exporter-${node}" \
+        --listen-port=8080 --group=docker
 fi
 
 # ----------------------------------------------------------------------------
