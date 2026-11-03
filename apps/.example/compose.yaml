@@ -1,0 +1,18 @@
+# ============================================================================
+# Example applications stack
+#
+# Purpose:       Groups the reusable application templates for local testing.
+# Role:          Each example remains an independent Compose service with its
+#                own build context and profile. Copy an example folder to
+#                apps/<app> before adapting it for a deployed application.
+# ============================================================================
+
+include:
+  # Java application export with an embedded JRE.
+  - path: ./java-service-example/compose.yaml
+
+  # Prebuilt Angular SSR application.
+  - path: ./angular-app-example/compose.yaml
+
+  # Node.js application with production dependencies.
+  - path: ./nodejs-app-example/compose.yaml

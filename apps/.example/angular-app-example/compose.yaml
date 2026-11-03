@@ -1,0 +1,28 @@
+# ============================================================================
+# Angular SSR application example
+#
+# Purpose:       Runs a prebuilt Angular SSR export with Node.js as an internal
+#                HTTP service on port 8080.
+# Prerequisites: source/ must contain server/server.mjs and browser/.
+#                Copy this folder to apps/<app> and rename the service, profile
+#                and ANGULAR_APP_EXAMPLE_* variables.
+# Variables:     TZ and ANGULAR_APP_EXAMPLE_* from .env.
+# ============================================================================
+
+services:
+  angular-app-example:
+    build:
+      context: .
+    restart: always
+    profiles: [angular-app-example]
+    init: true
+
+    expose:
+      - "${ANGULAR_APP_EXAMPLE_PORT:-8080}"
+
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      NODE_ENV: ${ANGULAR_APP_EXAMPLE_NODE_ENV:-production}
+      PORT: ${ANGULAR_APP_EXAMPLE_PORT:-8080}
+      NG_ALLOWED_HOSTS: ${ANGULAR_APP_EXAMPLE_NG_ALLOWED_HOSTS:-*}
+      NG_TRUST_PROXY_HEADERS: ${ANGULAR_APP_EXAMPLE_NG_TRUST_PROXY_HEADERS:-x-forwarded-proto}
