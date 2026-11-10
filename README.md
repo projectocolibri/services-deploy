@@ -326,21 +326,17 @@ TLS ends at nginx; every service behind it serves plain HTTP on its **`*_PORT`**
 **Public app**
 
 1. Copy `gateway/http/conf.d/sites.conf.example` to `sites.conf`, remove `default.conf`, and configure the public app section with the domain and `proxy_pass http://<service>:<port>`. This gives the deployment one nginx configuration file.
-2. Put the certificate in `gateway/http/certs/<domain>/fullchain.pem` and `privkey.pem`.
+2. Set `HTTP_CERTS_VOLUME` in `.env` to the absolute host directory containing
+   the certificates. Put each site's certificate and private key in
+   `<HTTP_CERTS_VOLUME>/<domain>/`, using the filenames configured in nginx.
+   The directory is mounted read-only at `/etc/nginx/certs`.
 3. Reload: `docker compose exec http nginx -s reload`.
 
 **Internal sites** (e.g. `https://pmm.monitor.example.lan`)
 
 1. Use the internal sites section in `gateway/http/conf.d/sites.conf`; replace `example.lan`. Its map lists one host name per service on port 8080; update a line if you changed that service's `*_PORT` (nginx does not read `.env`).
-2. Issue a certificate from the internal CA (created on the first run):
-
-   ```bash
-   cd gateway/http
-   ./internal-ca.sh example.lan '*.apps.example.lan' '*.mysql.example.lan' \
-     '*.postgres.example.lan' '*.monitor.example.lan'
-   ```
-
-   Install `gateway/http/certs/internal-ca/ca.crt` as a trusted root CA on every client. **Never share `ca.key`.**
+2. Provide a certificate for the internal names in the same
+   `HTTP_CERTS_VOLUME` directory and configure its path in nginx.
 3. Point the names at this server in your internal DNS (or the VPN clients' hosts file), then reload nginx.
 
 Only private networks (LAN, VPN, Docker) are allowed on internal sites.
@@ -448,7 +444,7 @@ compose.yaml                 includes every stack, defines the network
 gateway/
   vpn/host/                  WireGuard server (server with the primaries)
   vpn/client/                WireGuard peer for replica-only servers
-  http/                      nginx: conf.d/, certs/, internal-ca.sh
+  http/                      nginx: conf.d/, certs/
 monitoring/
   pmm/                       PMM Server: dashboards/Custom/, alerting/ (Slack, rules/)
   client/                    PMM client, cAdvisor, custom-queries/

@@ -9,8 +9,9 @@
 # Prerequisites: - TCP ports HTTP_PORT and HTTPS_PORT open in the firewall
 #                - Copy conf.d/sites.conf.example to sites.conf, remove
 #                  default.conf, and customize the public and internal sites.
-#                - Certificates in certs/<domain>/fullchain.pem and privkey.pem
-# Variables:     HTTP_PORT, HTTPS_PORT and TZ from .env.
+#                - Certificates in ${HTTP_CERTS_VOLUME}/<domain>/ as configured
+#                  by the active nginx site configuration.
+# Variables:     HTTP_PORT, HTTPS_PORT, HTTP_CERTS_VOLUME and TZ from .env.
 # ============================================================================
 
 services:
@@ -46,6 +47,5 @@ services:
       # Site configs. Only *.conf files are loaded. Reload after changes:
       #   docker compose exec http nginx -s reload
       - ./conf.d:/etc/nginx/conf.d:ro
-      # TLS certificates: certs/<domain>/fullchain.pem and privkey.pem
-      # (not committed).
-      - ./certs:/etc/nginx/certs:ro
+      # TLS certificates from the host path configured in .env (read-only).
+      - ${HTTP_CERTS_VOLUME:?Set HTTP_CERTS_VOLUME to the host certificate directory}:/etc/nginx/certs:ro
