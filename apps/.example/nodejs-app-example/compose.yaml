@@ -1,0 +1,29 @@
+# ============================================================================
+# Node.js application example
+#
+# Purpose:       Runs the Node.js application in ./source as an internal HTTP
+#                service on port 8080.
+# Prerequisites: source/ must contain package.json, package-lock.json and the
+#                production application files. The app must listen on HOST and
+#                PORT.
+#                Copy this folder to apps/<app> and rename the service, profile
+#                and NODEJS_APP_EXAMPLE_* variables.
+# Variables:     TZ and NODEJS_APP_EXAMPLE_* from .env.
+# ============================================================================
+
+services:
+  nodejs-app-example:
+    build:
+      context: .
+    restart: always
+    profiles: [nodejs-app-example]
+    init: true
+
+    expose:
+      - "${NODEJS_APP_EXAMPLE_PORT:-8080}"
+
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      NODE_ENV: ${NODEJS_APP_EXAMPLE_NODE_ENV:-production}
+      HOST: ${NODEJS_APP_EXAMPLE_HOST:-0.0.0.0}
+      PORT: ${NODEJS_APP_EXAMPLE_PORT:-8080}

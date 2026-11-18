@@ -1,0 +1,53 @@
+# ============================================================================
+# Java service example
+#
+# Purpose:       Runs a Linux Java application export with its own JRE, as an
+#                internal HTTP service on port 8080.
+# Role:          Copy this folder to apps/<app>, rename the service, profile,
+#                workspace variable and launcher in Dockerfile.
+# Prerequisites: - ./source: Linux application export
+#                - ./jre.tar.gz: JRE archive with a top-level jre/ directory
+#                - the application listening on 0.0.0.0:8080
+#                - JAVA_SERVICE_WORKSPACE: writable host workspace directory
+# Variables:     TZ and JAVA_SERVICE_WORKSPACE from .env.
+# ============================================================================
+
+services:
+  java-service-example:
+    # --------------------------------------------------------------------------
+    # Image and restart policy
+    # --------------------------------------------------------------------------
+    build:
+      context: .
+    restart: always
+    profiles: [java-service-example]
+    init: true
+
+    # --------------------------------------------------------------------------
+    # HTTP port
+    # --------------------------------------------------------------------------
+    expose:
+      - "8080"
+
+    # --------------------------------------------------------------------------
+    # Runtime settings
+    # --------------------------------------------------------------------------
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+
+    # --------------------------------------------------------------------------
+    # Data
+    # --------------------------------------------------------------------------
+    volumes:
+      # The Dockerfile starts the application with -data /data/workspace.
+      - ${JAVA_SERVICE_WORKSPACE:-/var/java-app-example/workspace/java-service-example}:/data/workspace
+
+    # --------------------------------------------------------------------------
+    # Health check
+    # --------------------------------------------------------------------------
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
