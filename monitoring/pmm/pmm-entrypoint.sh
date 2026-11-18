@@ -163,14 +163,14 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# Stale PostgreSQL socket lock
+# Stale PostgreSQL locks
 # ----------------------------------------------------------------------------
 # `docker restart` keeps the container's files, so PMM's internal PostgreSQL
-# finds the socket lock files of its previous run (it listens in
-# /run/postgresql and /tmp). When the PID written in them now belongs to
-# another process of the new start, PostgreSQL refuses to start and Grafana
-# with it. Nothing runs yet at this point, so they are stale.
-rm -f /run/postgresql/.s.PGSQL.*.lock /tmp/.s.PGSQL.*.lock
+# can find lock files from its previous run. When the PID written in
+# postmaster.pid now belongs to another process of the new start, PostgreSQL
+# refuses to start and Grafana with it. Nothing runs yet at this point, so
+# these locks are stale.
+rm -f /srv/postgres14/postmaster.pid /run/postgresql/.s.PGSQL.*.lock /tmp/.s.PGSQL.*.lock
 
 # ----------------------------------------------------------------------------
 # Custom alert rules
